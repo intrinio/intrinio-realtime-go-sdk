@@ -21,7 +21,7 @@ const (
 	QUOTE_MSG_SIZE     int = 52
 	REFRESH_MSG_SIZE   int = 52
 	UA_MSG_SIZE        int = 74
-	MAX_QUEUE_DEPTH    int = 10000
+	MAX_QUEUE_DEPTH    int = 1000
 )
 
 func doBackoff(fn func() bool, isStopped *bool) {
@@ -405,6 +405,7 @@ func (client *Client) JoinLobby() {
 		time.Sleep(time.Second)
 	}
 	if !client.subscriptions["$FIREHOSE"] {
+		client.subscriptions["$FIREHOSE"] = true
 		client.join("$FIREHOSE")
 	} else {
 		log.Print("Client - lobby channel already joined")
