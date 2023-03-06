@@ -21,7 +21,7 @@ const (
 	QUOTE_MSG_SIZE     int = 52
 	REFRESH_MSG_SIZE   int = 52
 	UA_MSG_SIZE        int = 74
-	MAX_QUEUE_DEPTH    int = 1000
+	MAX_QUEUE_DEPTH    int = 10000
 )
 
 func doBackoff(fn func() bool, isStopped *bool) {
@@ -79,7 +79,7 @@ func NewClient(c Config, onTrade func(Trade), onQuote func(Quote), onRefresh fun
 	}
 	if onQuote != nil {
 		client.OnQuote = onQuote
-		workerCount += 3
+		workerCount += 5
 	}
 	if onRefresh != nil {
 		client.OnRefresh = onRefresh
@@ -252,7 +252,7 @@ func (client *Client) read() {
 				}
 			default:
 				if !queueFull {
-					log.Println("Client - Quote channel full")
+					log.Println("Client - read channel full")
 					queueFull = true
 				}
 			}
