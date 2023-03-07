@@ -19,6 +19,7 @@ Go SDK for working with Intrinio's Real-Time Option Price WebSocket Feed
 
 ### Option 2 - From source
 
+
 1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-options-go-sdk
 2. Navigate to the project root
 3. Open the example project at project-root/example
