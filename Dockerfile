@@ -1,10 +1,11 @@
-
-FROM golang:1.2
+FROM golang:1.20.1
 
 RUN mkdir /intrinio
 
-WORKDIR /intrinio
-
 COPY . /intrinio
 
-CMD /bin/bash
+WORKDIR /intrinio/example
+
+RUN go get .
+
+CMD go run .
