@@ -9,14 +9,22 @@ Go SDK for working with Intrinio's Real-Time Option Price WebSocket Feed
 
 ## Installation
 
-### Option 1
+### Option 1 - Docker
+
+1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-options-go-sdk
+2. Navigate to the project root
+3. Update example/config.json with your api key
+3. Run `docker compose build`
+4. Run `docker compose run example`
+
+### Option 2 - From source
 
 1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-options-go-sdk
 2. Navigate to the project root
 3. Open the example project at project-root/example
 4. Build your project using example.go as the base
 
-### Option 2
+### Option 3 - Pre built package
 1. Create a new Go project
 2. import "github.com/intrinio/intrinio-realtime-options-go-sdk"
 3. Reference the package "intrinio"
