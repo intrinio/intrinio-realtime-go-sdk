@@ -21,7 +21,7 @@ const (
 	QUOTE_MSG_SIZE     int = 52
 	REFRESH_MSG_SIZE   int = 52
 	UA_MSG_SIZE        int = 74
-	MAX_QUEUE_DEPTH    int = 10000
+	MAX_QUEUE_DEPTH    int = 20000
 )
 
 func doBackoff(fn func() bool, isStopped *bool) {
@@ -72,14 +72,14 @@ func NewClient(c Config, onTrade func(Trade), onQuote func(Quote), onRefresh fun
 		config:        c,
 		subscriptions: make(map[string]bool),
 	}
-	var workerCount int = 0
+	var workerCount int = 1
 	if onTrade != nil {
 		client.OnTrade = onTrade
 		workerCount++
 	}
 	if onQuote != nil {
 		client.OnQuote = onQuote
-		workerCount += 5
+		workerCount += 6
 	}
 	if onRefresh != nil {
 		client.OnRefresh = onRefresh
