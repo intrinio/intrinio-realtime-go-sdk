@@ -15,14 +15,17 @@ import (
 var selfHealBackoffs [5]int = [5]int{10, 30, 60, 300, 600}
 
 const (
-	HEARTBEAT_INTERVAL int = 20
-	MAX_SYMBOL_SIZE    int = 21
-	TRADE_MSG_SIZE     int = 72
-	QUOTE_MSG_SIZE     int = 52
-	REFRESH_MSG_SIZE   int = 52
-	UA_MSG_SIZE        int = 74
-	MAX_QUEUE_DEPTH    int = 20000
+	HEARTBEAT_INTERVAL       int = 20
+	MAX_OPTIONS_QUEUE_DEPTH  int = 20000
+	MAX_EQUITIES_QUEUE_DEPTH int = 10000
 )
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 func doBackoff(fn func() bool, isStopped *bool) {
 	i := 0
@@ -39,55 +42,121 @@ func doBackoff(fn func() bool, isStopped *bool) {
 }
 
 type Client struct {
-	token             string
-	tokenUpdateTime   time.Time
-	dataMsgCount      uint64
-	txtMsgCount       uint32
-	workerCount       int
-	subscriptions     map[string]bool
-	isStopped         bool
-	isClosed          bool
-	closeWg           sync.WaitGroup
-	reconnected       chan bool
-	readChannel       chan []byte
-	writeChannel      chan []byte
-	httpClient        *http.Client
-	wsConn            *websocket.Conn
-	heartbeat         *time.Ticker
-	config            Config
-	OnTrade           func(Trade)
-	OnQuote           func(Quote)
-	OnRefresh         func(Refresh)
-	OnUnusualActivity func(UnusualActivity)
+	token           string
+	tokenUpdateTime time.Time
+	dataMsgCount    uint64
+	txtMsgCount     uint32
+	workerCount     int
+	subscriptions   map[string]bool
+	isStopped       bool
+	isClosed        bool
+	closeWg         sync.WaitGroup
+	reconnected     chan bool
+	readChannel     chan []byte
+	writeChannel    chan []byte
+	httpClient      *http.Client
+	wsConn          *websocket.Conn
+	heartbeat       *time.Ticker
+	config          Config
+	work            func()
+	composeJoinMsg  func(string) []byte
+	composeLeaveMsg func(string) []byte
 }
 
-func NewClient(c Config, onTrade func(Trade), onQuote func(Quote), onRefresh func(Refresh), onUnusualActivity func(UnusualActivity)) *Client {
+func NewOptionsClient(
+	c Config,
+	onTrade func(OptionTrade),
+	onQuote func(OptionQuote),
+	onRefresh func(OptionRefresh),
+	onUnusualActivity func(OptionUnusualActivity)) *Client {
 	client := &Client{
 		isStopped:     true,
 		isClosed:      true,
+		workerCount:   1,
 		reconnected:   make(chan bool),
-		readChannel:   make(chan []byte, MAX_QUEUE_DEPTH),
+		readChannel:   make(chan []byte, MAX_OPTIONS_QUEUE_DEPTH),
 		writeChannel:  make(chan []byte, 1000),
+		subscriptions: make(map[string]bool),
 		httpClient:    http.DefaultClient,
 		config:        c,
-		subscriptions: make(map[string]bool),
 	}
-	var workerCount int = 1
 	if onTrade != nil {
-		client.OnTrade = onTrade
-		workerCount++
+		client.workerCount++
 	}
 	if onQuote != nil {
-		client.OnQuote = onQuote
-		workerCount += 6
+		client.workerCount += 6
 	}
-	if onRefresh != nil {
-		client.OnRefresh = onRefresh
+	client.work = func() {
+		for {
+			if len(client.readChannel) == 0 {
+				if client.isClosed && client.isStopped {
+					defer client.closeWg.Done()
+					return
+				} else {
+					time.Sleep(time.Second)
+				}
+			}
+			workOnOptions(
+				client.readChannel,
+				onTrade,
+				onQuote,
+				onRefresh,
+				onUnusualActivity)
+		}
 	}
-	if onUnusualActivity != nil {
-		client.OnUnusualActivity = onUnusualActivity
+	client.composeJoinMsg = func(symbol string) []byte {
+		return composeOptionJoinMsg(
+			onTrade != nil,
+			onQuote != nil,
+			onRefresh != nil,
+			onUnusualActivity != nil,
+			symbol)
 	}
-	client.workerCount = workerCount
+	client.composeLeaveMsg = composeOptionLeaveMsg
+	return client
+}
+
+func NewEquitiesClient(
+	c Config,
+	onTrade func(EquityTrade),
+	onQuote func(EquityQuote)) *Client {
+	client := &Client{
+		isStopped:     true,
+		isClosed:      true,
+		workerCount:   2,
+		reconnected:   make(chan bool),
+		readChannel:   make(chan []byte, MAX_EQUITIES_QUEUE_DEPTH),
+		writeChannel:  make(chan []byte, 1000),
+		subscriptions: make(map[string]bool),
+		httpClient:    http.DefaultClient,
+		config:        c,
+	}
+	if onQuote != nil {
+		client.workerCount += 2
+	}
+	client.work = func() {
+		for {
+			if len(client.readChannel) == 0 {
+				if client.isClosed && client.isStopped {
+					defer client.closeWg.Done()
+					return
+				} else {
+					time.Sleep(time.Second)
+				}
+			}
+			workOnEquities(
+				client.readChannel,
+				onTrade,
+				onQuote)
+		}
+	}
+	client.composeJoinMsg = func(symbol string) []byte {
+		return composeEquityJoinMsg(
+			onTrade != nil,
+			onQuote != nil,
+			symbol)
+	}
+	client.composeLeaveMsg = composeEquityLeaveMsg
 	return client
 }
 
@@ -164,7 +233,7 @@ func (client *Client) tryResetWebSocket() bool {
 	client.wsConn = conn
 	log.Printf("Client - Rejoining")
 	for key := range client.subscriptions {
-		client.join(key)
+		client.writeChannel <- client.composeJoinMsg(key)
 	}
 	client.reconnected <- true
 	client.isClosed = false
@@ -210,7 +279,7 @@ func (client *Client) write() {
 			select {
 			case <-client.heartbeat.C:
 				client.wsConn.WriteMessage(websocket.BinaryMessage, []byte{})
-				//client.LogStats()
+				client.LogStats()
 				if len(client.writeChannel) < 2 {
 					time.Sleep(time.Duration(500) * time.Millisecond)
 				}
@@ -229,7 +298,7 @@ func (client *Client) write() {
 }
 
 func (client *Client) read() {
-	var highWatermark int = MAX_QUEUE_DEPTH * 9 / 10
+	var highWatermark int = cap(client.readChannel) * 9 / 10
 	var queueFull bool = false
 	for {
 		msgType, data, err := client.wsConn.ReadMessage()
@@ -263,115 +332,16 @@ func (client *Client) read() {
 	}
 }
 
-func work(
-	isClosed *bool,
-	isStopped *bool,
-	closeWg *sync.WaitGroup,
-	readChannel <-chan []byte,
-	onTrade func(Trade),
-	onQuote func(Quote),
-	onRefresh func(Refresh),
-	onUA func(UnusualActivity)) {
-	for {
-		if len(readChannel) == 0 {
-			if *isClosed && *isStopped {
-				defer closeWg.Done()
-				return
-			} else {
-				time.Sleep(time.Second)
-			}
-		}
-		select {
-		case data := <-readChannel:
-			count := data[0]
-			startIndex := 1
-			for i := 0; i < int(count); i++ {
-				msgType := data[startIndex+1+MAX_SYMBOL_SIZE]
-				if msgType == 1 {
-					quote := parseQuote(data[startIndex:(startIndex + QUOTE_MSG_SIZE)])
-					startIndex = startIndex + QUOTE_MSG_SIZE
-					if onQuote != nil {
-						onQuote(quote)
-					}
-				} else if msgType == 0 {
-					trade := parseTrade(data[startIndex:(startIndex + TRADE_MSG_SIZE)])
-					startIndex = startIndex + TRADE_MSG_SIZE
-					if onTrade != nil {
-						onTrade(trade)
-					}
-				} else if msgType > 2 {
-					ua := parseUA(data[startIndex:(startIndex + UA_MSG_SIZE)])
-					startIndex = startIndex + UA_MSG_SIZE
-					if onUA != nil {
-						onUA(ua)
-					}
-				} else if msgType == 2 {
-					refresh := parseRefresh(data[startIndex:(startIndex + REFRESH_MSG_SIZE)])
-					startIndex = startIndex + REFRESH_MSG_SIZE
-					if onRefresh != nil {
-						onRefresh(refresh)
-					}
-				} else {
-					log.Printf("Client - Invalid message type: %d", msgType)
-				}
-			}
-		default:
-		}
-	}
-}
-
 func (client *Client) Start() {
 	client.isStopped = false
 	token := client.getToken()
 	client.initWebSocket(token)
 	for w := 0; w < client.workerCount; w++ {
 		client.closeWg.Add(1)
-		go work(
-			&client.isClosed,
-			&client.isStopped,
-			&client.closeWg,
-			client.readChannel,
-			client.OnTrade,
-			client.OnQuote,
-			client.OnRefresh,
-			client.OnUnusualActivity)
+		go client.work()
 	}
 	go client.read()
 	go client.write()
-}
-
-func (client *Client) join(symbol string) {
-	newSymbol := convertOldContractIdToNew(symbol)
-	var mask uint8 = 0
-	if client.OnTrade != nil {
-		mask = mask | 1
-	}
-	if client.OnQuote != nil {
-		mask = mask | 2
-	}
-	if client.OnRefresh != nil {
-		mask = mask | 4
-	}
-	if client.OnUnusualActivity != nil {
-		mask = mask | 8
-	}
-	message := make([]byte, 0, len(newSymbol)+2)
-	message = append(message, 74, mask)
-	message = append(message, []byte(newSymbol)...)
-	log.Printf("Client - Joining channel %s\n", newSymbol)
-	client.writeChannel <- message
-}
-
-func (client *Client) leave(symbol string) {
-	if client.subscriptions[symbol] {
-		delete(client.subscriptions, symbol)
-		newSymbol := convertOldContractIdToNew(symbol)
-		message := make([]byte, 0, len(newSymbol)+2)
-		message = append(message, 76, 0)
-		message = append(message, []byte(newSymbol)...)
-		log.Printf("Client - Leaving channel %s\n", newSymbol)
-		client.writeChannel <- message
-	}
 }
 
 func (client *Client) Join(symbol string) {
@@ -382,7 +352,7 @@ func (client *Client) Join(symbol string) {
 		}
 		if !client.subscriptions[symbol] {
 			client.subscriptions[symbol] = true
-			client.join(symbol)
+			client.writeChannel <- client.composeJoinMsg(symbol)
 		}
 	}
 }
@@ -395,7 +365,7 @@ func (client *Client) JoinMany(symbols []string) {
 		s := strings.TrimSpace(symbols[i])
 		if s != "" && !client.subscriptions[symbols[i]] {
 			client.subscriptions[symbols[i]] = true
-			client.join(symbols[i])
+			client.writeChannel <- client.composeJoinMsg(symbols[i])
 		}
 	}
 }
@@ -406,7 +376,7 @@ func (client *Client) JoinLobby() {
 	}
 	if !client.subscriptions["$FIREHOSE"] {
 		client.subscriptions["$FIREHOSE"] = true
-		client.join("$FIREHOSE")
+		client.writeChannel <- client.composeJoinMsg("$FIREHOSE")
 	} else {
 		log.Print("Client - lobby channel already joined")
 	}
@@ -414,14 +384,18 @@ func (client *Client) JoinLobby() {
 
 func (client *Client) LeaveAll() {
 	for key := range client.subscriptions {
-		client.leave(key)
+		client.writeChannel <- client.composeLeaveMsg(key)
+		delete(client.subscriptions, key)
 	}
 }
 
 func (client *Client) Leave(symbol string) {
 	s := strings.TrimSpace(symbol)
 	if s != "" {
-		client.leave(s)
+		if client.subscriptions[symbol] {
+			client.writeChannel <- client.composeLeaveMsg(symbol)
+			delete(client.subscriptions, symbol)
+		}
 	}
 }
 
@@ -431,8 +405,11 @@ func (client *Client) LeaveMany(symbols []string) {
 	}
 }
 
-func (client *Client) LeaveLobby() {
-	client.leave("$FIREHOSE")
+func (client *Client) LeaveLobby(composeLeave func(string)) {
+	if client.subscriptions["$FIREHOSE"] {
+		client.writeChannel <- client.composeLeaveMsg("$FIREHOSE")
+		delete(client.subscriptions, "$FIREHOSE")
+	}
 }
 
 func (client *Client) Stop() {

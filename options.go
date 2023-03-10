@@ -2,75 +2,20 @@ package intrinio
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"strings"
 	"time"
 )
 
-type Provider string
-
 const (
-	OPRA   Provider = "OPRA"
-	MANUAL Provider = "MANUAL"
+	MAX_OPTION_SYMBOL_SIZE  int = 21
+	OPTION_TRADE_MSG_SIZE   int = 72
+	OPTION_QUOTE_MSG_SIZE   int = 52
+	OPTION_REFRESH_MSG_SIZE int = 52
+	OPTION_UA_MSG_SIZE      int = 74
 )
-
-type Config struct {
-	ApiKey    string
-	Provider  Provider
-	IPAddress string
-}
-
-func (config Config) getAuthUrl() string {
-	if config.Provider == "OPRA" {
-		return ("https://realtime-options.intrinio.com/auth?api_key=" + config.ApiKey)
-	} else if config.Provider == "MANUAL" {
-		return ("http://" + config.IPAddress + "/auth?api_key=" + config.ApiKey)
-	} else {
-		panic("Client - Provider not specified in config")
-	}
-}
-
-func (config Config) getWSUrl(token string) string {
-	if config.Provider == "OPRA" {
-		return ("wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
-	} else if config.Provider == "MANUAL" {
-		return ("ws://" + config.IPAddress + "/socket/websocket?vsn=1.0.0&token=" + token)
-	} else {
-		panic("Client - Provider not specified in config")
-	}
-}
-
-func LoadConfig() Config {
-	wd, getWdErr := os.Getwd()
-	if getWdErr != nil {
-		panic(getWdErr)
-	}
-	filepath := wd + string(os.PathSeparator) + "config.json"
-	log.Printf("Client - Loading application configuration from: %s\n", filepath)
-	data, readFileErr := os.ReadFile(filepath)
-	if readFileErr != nil {
-		log.Fatal(readFileErr)
-	}
-	var config Config
-	unmarshalErr := json.Unmarshal(data, &config)
-	if unmarshalErr != nil {
-		log.Fatal(unmarshalErr)
-	}
-	if strings.TrimSpace(config.ApiKey) == "" {
-		log.Fatal("Client - Config must provide a valid API key")
-	}
-	if (config.Provider != "OPRA") && (config.Provider != "MANUAL") {
-		log.Fatal("Client - Config must specify a valid provider")
-	}
-	if (config.Provider == "MANUAL") && (strings.TrimSpace(config.IPAddress) == "") {
-		log.Fatal("Client - Config must specify an IP address for manual configuration")
-	}
-	return config
-}
 
 var priceTypeDivisorTable [16]float64 = [16]float64{1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0, 100000000.0, 1000000000.0, 512.0, 0.0, 0.0, 0.0, 0.0, math.NaN()}
 
@@ -138,7 +83,7 @@ const TIME_FORMAT string = "060102"
 
 var newYork, loadLocationErr = time.LoadLocation("America/New_York")
 
-type Trade struct {
+type OptionTrade struct {
 	ContractId                 string
 	Price                      float32
 	Size                       uint32
@@ -149,21 +94,21 @@ type Trade struct {
 	Timestamp                  float64
 }
 
-func (trade Trade) GetStrikePrice() float32 {
+func (trade OptionTrade) GetStrikePrice() float32 {
 	whole := uint16(trade.ContractId[13]-'0')*10000 + uint16(trade.ContractId[14]-'0')*1000 + uint16(trade.ContractId[15]-'0')*100 + uint16(trade.ContractId[16]-'0')*10 + uint16(trade.ContractId[17]-'0')
 	part := float32(trade.ContractId[18]-'0')*0.1 + float32(trade.ContractId[19]-'0')*0.01 + float32(trade.ContractId[20]-'0')*0.001
 	return (float32(whole) + part)
 }
 
-func (trade Trade) IsPut() bool {
+func (trade OptionTrade) IsPut() bool {
 	return (trade.ContractId[12] == 'P')
 }
 
-func (trade Trade) IsCall() bool {
+func (trade OptionTrade) IsCall() bool {
 	return (trade.ContractId[12] == 'C')
 }
 
-func (trade Trade) GetExpirationDate() time.Time {
+func (trade OptionTrade) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
@@ -174,12 +119,12 @@ func (trade Trade) GetExpirationDate() time.Time {
 	return time
 }
 
-func (trade Trade) GetUnderlyingSymbol() string {
+func (trade OptionTrade) GetUnderlyingSymbol() string {
 	return strings.TrimRight(trade.ContractId[0:6], "_")
 }
 
-func parseTrade(bytes []byte) Trade {
-	return Trade{
+func parseOptionTrade(bytes []byte) OptionTrade {
+	return OptionTrade{
 		ContractId:                 extractOldContractId(bytes[1:(1 + bytes[0])]),
 		Price:                      extractUInt32Price(bytes[25:29], bytes[23]),
 		Size:                       binary.LittleEndian.Uint32(bytes[29:33]),
@@ -191,7 +136,7 @@ func parseTrade(bytes []byte) Trade {
 	}
 }
 
-type Quote struct {
+type OptionQuote struct {
 	ContractId string
 	AskPrice   float32
 	BidPrice   float32
@@ -200,21 +145,21 @@ type Quote struct {
 	Timestamp  float64
 }
 
-func (quote Quote) GetStrikePrice() float32 {
+func (quote OptionQuote) GetStrikePrice() float32 {
 	whole := uint16(quote.ContractId[13]-'0')*10000 + uint16(quote.ContractId[14]-'0')*1000 + uint16(quote.ContractId[15]-'0')*100 + uint16(quote.ContractId[16]-'0')*10 + uint16(quote.ContractId[17]-'0')
 	part := float32(quote.ContractId[18]-'0')*0.1 + float32(quote.ContractId[19]-'0')*0.01 + float32(quote.ContractId[20]-'0')*0.001
 	return (float32(whole) + part)
 }
 
-func (quote Quote) IsPut() bool {
+func (quote OptionQuote) IsPut() bool {
 	return (quote.ContractId[12] == 'P')
 }
 
-func (quote Quote) IsCall() bool {
+func (quote OptionQuote) IsCall() bool {
 	return (quote.ContractId[12] == 'C')
 }
 
-func (quote Quote) GetExpirationDate() time.Time {
+func (quote OptionQuote) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
@@ -225,12 +170,12 @@ func (quote Quote) GetExpirationDate() time.Time {
 	return time
 }
 
-func (quote Quote) GetUnderlyingSymbol() string {
+func (quote OptionQuote) GetUnderlyingSymbol() string {
 	return strings.TrimRight(quote.ContractId[0:6], "_")
 }
 
-func parseQuote(bytes []byte) Quote {
-	return Quote{
+func parseOptionQuote(bytes []byte) OptionQuote {
+	return OptionQuote{
 		ContractId: extractOldContractId(bytes[1:(1 + bytes[0])]),
 		AskPrice:   extractUInt32Price(bytes[24:28], bytes[23]),
 		AskSize:    binary.LittleEndian.Uint32(bytes[28:32]),
@@ -240,7 +185,7 @@ func parseQuote(bytes []byte) Quote {
 	}
 }
 
-type Refresh struct {
+type OptionRefresh struct {
 	ContractId   string
 	OpenInterest uint32
 	OpenPrice    float32
@@ -249,21 +194,21 @@ type Refresh struct {
 	LowPrice     float32
 }
 
-func (refresh Refresh) GetStrikePrice() float32 {
+func (refresh OptionRefresh) GetStrikePrice() float32 {
 	whole := uint16(refresh.ContractId[13]-'0')*10000 + uint16(refresh.ContractId[14]-'0')*1000 + uint16(refresh.ContractId[15]-'0')*100 + uint16(refresh.ContractId[16]-'0')*10 + uint16(refresh.ContractId[17]-'0')
 	part := float32(refresh.ContractId[18]-'0')*0.1 + float32(refresh.ContractId[19]-'0')*0.01 + float32(refresh.ContractId[20]-'0')*0.001
 	return (float32(whole) + part)
 }
 
-func (refresh Refresh) IsPut() bool {
+func (refresh OptionRefresh) IsPut() bool {
 	return (refresh.ContractId[12] == 'P')
 }
 
-func (refresh Refresh) IsCall() bool {
+func (refresh OptionRefresh) IsCall() bool {
 	return (refresh.ContractId[12] == 'C')
 }
 
-func (refresh Refresh) GetExpirationDate() time.Time {
+func (refresh OptionRefresh) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
@@ -274,12 +219,12 @@ func (refresh Refresh) GetExpirationDate() time.Time {
 	return time
 }
 
-func (refresh Refresh) GetUnderlyingSymbol() string {
+func (refresh OptionRefresh) GetUnderlyingSymbol() string {
 	return strings.TrimRight(refresh.ContractId[0:6], "_")
 }
 
-func parseRefresh(bytes []byte) Refresh {
-	return Refresh{
+func parseOptionRefresh(bytes []byte) OptionRefresh {
+	return OptionRefresh{
 		ContractId:   extractOldContractId(bytes[1:(1 + bytes[0])]),
 		OpenInterest: binary.LittleEndian.Uint32(bytes[24:28]),
 		OpenPrice:    extractUInt32Price(bytes[28:32], bytes[23]),
@@ -306,7 +251,7 @@ const (
 	BEARISH UASentiment = 2
 )
 
-type UnusualActivity struct {
+type OptionUnusualActivity struct {
 	ContractId                 string
 	Type                       UAType
 	Sentiment                  UASentiment
@@ -319,21 +264,21 @@ type UnusualActivity struct {
 	Timestamp                  float64
 }
 
-func (ua UnusualActivity) GetStrikePrice() float32 {
+func (ua OptionUnusualActivity) GetStrikePrice() float32 {
 	whole := uint16(ua.ContractId[13]-'0')*10000 + uint16(ua.ContractId[14]-'0')*1000 + uint16(ua.ContractId[15]-'0')*100 + uint16(ua.ContractId[16]-'0')*10 + uint16(ua.ContractId[17]-'0')
 	part := float32(ua.ContractId[18]-'0')*0.1 + float32(ua.ContractId[19]-'0')*0.01 + float32(ua.ContractId[20]-'0')*0.001
 	return (float32(whole) + part)
 }
 
-func (ua UnusualActivity) IsPut() bool {
+func (ua OptionUnusualActivity) IsPut() bool {
 	return (ua.ContractId[12] == 'P')
 }
 
-func (ua UnusualActivity) IsCall() bool {
+func (ua OptionUnusualActivity) IsCall() bool {
 	return (ua.ContractId[12] == 'C')
 }
 
-func (ua UnusualActivity) GetExpirationDate() time.Time {
+func (ua OptionUnusualActivity) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
@@ -344,12 +289,12 @@ func (ua UnusualActivity) GetExpirationDate() time.Time {
 	return time
 }
 
-func (ua UnusualActivity) GetUnderlyingSymbol() string {
+func (ua OptionUnusualActivity) GetUnderlyingSymbol() string {
 	return strings.TrimRight(ua.ContractId[0:6], "_")
 }
 
-func parseUA(bytes []byte) UnusualActivity {
-	return UnusualActivity{
+func parseOptionUA(bytes []byte) OptionUnusualActivity {
+	return OptionUnusualActivity{
 		ContractId:                 extractOldContractId(bytes[1:(1 + bytes[0])]),
 		Type:                       UAType(bytes[22]),
 		Sentiment:                  UASentiment(bytes[23]),
@@ -363,9 +308,82 @@ func parseUA(bytes []byte) UnusualActivity {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func workOnOptions(
+	readChannel <-chan []byte,
+	onTrade func(OptionTrade),
+	onQuote func(OptionQuote),
+	onRefresh func(OptionRefresh),
+	onUA func(OptionUnusualActivity)) {
+	select {
+	case data := <-readChannel:
+		count := data[0]
+		startIndex := 1
+		for i := 0; i < int(count); i++ {
+			msgType := data[startIndex+1+MAX_OPTION_SYMBOL_SIZE]
+			if msgType == 1 {
+				quote := parseOptionQuote(data[startIndex:(startIndex + OPTION_QUOTE_MSG_SIZE)])
+				startIndex = startIndex + OPTION_QUOTE_MSG_SIZE
+				if onQuote != nil {
+					onQuote(quote)
+				}
+			} else if msgType == 0 {
+				trade := parseOptionTrade(data[startIndex:(startIndex + OPTION_TRADE_MSG_SIZE)])
+				startIndex = startIndex + OPTION_TRADE_MSG_SIZE
+				if onTrade != nil {
+					onTrade(trade)
+				}
+			} else if msgType > 2 {
+				ua := parseOptionUA(data[startIndex:(startIndex + OPTION_UA_MSG_SIZE)])
+				startIndex = startIndex + OPTION_UA_MSG_SIZE
+				if onUA != nil {
+					onUA(ua)
+				}
+			} else if msgType == 2 {
+				refresh := parseOptionRefresh(data[startIndex:(startIndex + OPTION_REFRESH_MSG_SIZE)])
+				startIndex = startIndex + OPTION_REFRESH_MSG_SIZE
+				if onRefresh != nil {
+					onRefresh(refresh)
+				}
+			} else {
+				log.Printf("Option Client - Invalid message type: %d", msgType)
+			}
+		}
+	default:
 	}
-	return b
+}
+
+func composeOptionJoinMsg(
+	useTrade bool,
+	useQuote bool,
+	useRefresh bool,
+	useUA bool,
+	symbol string) []byte {
+	newSymbol := convertOldContractIdToNew(symbol)
+	var mask uint8 = 0
+	if useTrade {
+		mask = mask | 1
+	}
+	if useQuote {
+		mask = mask | 2
+	}
+	if useRefresh {
+		mask = mask | 4
+	}
+	if useUA {
+		mask = mask | 8
+	}
+	message := make([]byte, 0, len(newSymbol)+2)
+	message = append(message, 74, mask)
+	message = append(message, []byte(newSymbol)...)
+	log.Printf("Option Client - Composed join msg for channel %s\n", newSymbol)
+	return message
+}
+
+func composeOptionLeaveMsg(symbol string) []byte {
+	newSymbol := convertOldContractIdToNew(symbol)
+	message := make([]byte, 0, len(newSymbol)+2)
+	message = append(message, 76, 0)
+	message = append(message, []byte(newSymbol)...)
+	log.Printf("Option Client - Composed leave msg for channel %s\n", newSymbol)
+	return message
 }
