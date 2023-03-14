@@ -1,7 +1,7 @@
-# intrinio-realtime-options-go-sdk
-Go SDK for working with Intrinio's Real-Time Option Price WebSocket Feed
+# intrinio-realtime-go-sdk
+Go SDK for working with Intrinio's Real-Time WebSocket Feeds. This package provides facilities for working with both equity and option feeds.
 
-[Intrinio](https://intrinio.com/) provides real-time stock option prices via a two-way WebSocket connection. To get started, [subscribe to a real-time data feed](https://intrinio.com/financial-market-data/options-data) and follow the instructions below.
+[Intrinio](https://intrinio.com/) provides real-time stock prices and option prices via two-way WebSocket connections. To get started, subscribe to a [real-time equity data feed](https://intrinio.com/real-time-multi-exchange) or [real-time option data feed](https://intrinio.com/financial-market-data/options-data) and follow the instructions below.
 
 ## Requirements
 
@@ -11,30 +11,34 @@ Go SDK for working with Intrinio's Real-Time Option Price WebSocket Feed
 
 ### Option 1 - Docker
 
-1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-options-go-sdk
+1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-go-sdk
 2. Navigate to the project root
-3. Update example/config.json with your api key
+3. Update the ENV parameter in the dockerfile with your API key
 3. Run `docker compose build`
 4. Run `docker compose run example`
 
 ### Option 2 - From source
 
-
-1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-options-go-sdk
+1. Source files can be downloaded from: github.com/intrinio/intrinio-realtime-go-sdk
 2. Navigate to the project root
 3. Open the example project at project-root/example
 4. Build your project using example.go as the base
 
 ### Option 3 - Pre built package
 1. Create a new Go project
-2. import "github.com/intrinio/intrinio-realtime-options-go-sdk"
+2. import "github.com/intrinio/intrinio-realtime-go-sdk"
 3. Reference the package "intrinio"
 
 ## Example Project
-For a sample Go application see: [intrinio-realtime-options-go-sdk](https://github.com/intrinio/intrinio-realtime-options-go-sdk/example)
+For a sample Go application see: [intrinio-realtime-options-go-sdk](https://github.com/intrinio/intrinio-realtime-go-sdk/example)
 
 ## Features
 
+* Receive streaming, real-time equity price updates:
+	* every trade
+	* top-of-book ask and bid
+* Subscribe to updates from individual securities
+* Subscribe to updates for all securities
 * Receive streaming, real-time option price updates:
 	* every trade
 	* conflated bid and ask
@@ -42,6 +46,7 @@ For a sample Go application see: [intrinio-realtime-options-go-sdk](https://gith
 	* unusual activity(block trades, sweeps, whale trades, unusual sweeps)
 * Subscribe to updates from individual option contracts (or option chains)
 * Subscribe to updates for the entire universe of option contracts (~1.5M option contracts)
+* Receive updates for both equity share and option contract updates, simultaneously
 
 ## Example Usage
 ```go
@@ -54,55 +59,95 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/intrinio/intrinio-realtime-options-go-sdk"
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
-func handleRefresh(refresh intrinio.Refresh) {
+func handleEquityTrade(trade intrinio.EquityTrade) {
 }
 
-func handleTrade(trade intrinio.Trade) {
+func handleEquityQuote(quote intrinio.EquityQuote) {
 }
 
-func handleQuote(quote intrinio.Quote) {
+func handleOptionRefresh(refresh intrinio.OptionRefresh) {
 }
 
-func handleUA(ua intrinio.UnusualActivity) {
+func handleOptionTrade(trade intrinio.OptionTrade) {
+}
+
+func handleOptionQuote(quote intrinio.OptionQuote) {
+}
+
+func handleOptionUA(ua intrinio.OptionUnusualActivity) {
 }
 
 func main() {
-	var config intrinio.Config = intrinio.LoadConfig()
-	var client *intrinio.Client = intrinio.NewClient(config, handleTrade, nil, handleRefresh, nil)
+	var equitiesConfig intrinio.Config = intrinio.LoadConfig("equities-config.json")
+	var optionsConfig intrinio.Config = intrinio.LoadConfig("options-config.json")
+	var equitiesClient *intrinio.Client = intrinio.NewEquitiesClient(equitiesConfig, handleEquityTrade, handleEquityQuote)
+	var optionsClient *intrinio.Client = intrinio.NewOptionsClient(optionsConfig, handleOptionTrade, nil, handleOptionRefresh, nil)
 	close := make(chan os.Signal, 1)
 	signal.Notify(close, syscall.SIGINT, syscall.SIGTERM)
-	client.Start()
-	symbols := []string{"GE", "MSFT", "SPY___230227P00397000", "SPY___230227P00399000"}
-	client.JoinMany(symbols)
+	equitiesClient.Start()
+	optionsClient.Start()
+	symbols := []string{"GE", "MSFT"}
+	equitiesClient.JoinMany(symbols)
+	optionsClient.JoinMany(symbols)
 	//client.JoinLobby()
 	<-close
-	client.Stop()
+	equitiesClient.Stop()
+	optionsClient.Stop()
 }
 ```
 
-## Handling Quotes
+## Usage notes (applies to both equity and option clients)
 
-There are millions of options contracts, each with their own feed of activity.
-We highly encourage you to make your OnTrade, OnQuote, OnUnusualActivity, and OnRefresh callback methods has short as possible and follow a queue pattern so your app can handle the large volume of activity.
-Note that quotes (ask and bid updates) comprise 99% of the volume of the entire feed. Be cautious when deciding to receive quote updates. You will receive the latest 'ask' and 'bid' price with each each trade update. You may subscribe to receive a quote updates for ask/bid prices (by providing an OnQuote callback to `intrinio.NewClient`) but, again, we recommend caution when electing to do this.
+There are thousands of securities and millions of options contracts, each with their own feed of activity.
+We highly encourage you to make your callback methods (e.g. onTrade, onQuote, onUnusualActivity, onRefresh) as short as possible and follow a queue pattern so your app can handle the large volume of activity.
+Note that quotes (ask and bid updates) comprise 90-99% of the volume of the entire feed. Be cautious when deciding to receive quote updates. With the option feed, you will receive the latest 'ask' and 'bid' price with each each trade update. You may subscribe to receive a quote updates for ask/bid prices (by providing an OnQuote callback to `intrinio.NewOptionsClient` or `intrinio.NewEquitiesClient`) but, again, we recommend caution when electing to do this.
 
 ## Providers
 
 Currently, Intrino offers realtime data for this SDK from the following providers:
 
-* OPRA - [Homepage](https://www.opraplan.com/)
+* DSIP - Delayed SIP
+* OPRA - The Option Price Reporting Authority
 
-Please be sure that the correct provider is specified in the `intrinio.Config` object that is passed to the `intrinio.NewClient` routine.
+Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DSIP should be specified for an equities client and OPRA should be specified for an options client.
 
-## Data Format
+## Data Format (Equities)
 
 ### Trade Message
 
 ```go
-type Trade struct
+type EquityTrade struct
+```
+
+* **Symbol** - Ticker symbol
+* **Price** - The trade price in USD
+* **Size** - The size of the trade
+* **TotalVolume** - The total number of shares traded so far, today.
+* **Timestamp** - The time of the trade, as a Unix timestamp (with microsecond precision)
+
+### Quote Message
+
+```go
+type EquityQuote struct
+```
+* **Type** - The quote type
+  * **`Ask`** - Represents an 'Ask' type
+  * **`Bid`** - Represents a 'Bid' type
+* **Symbol** - Ticker symbol
+* **Price** - The last, best ask or bid price in USD
+* **Size** - The last, best ask or bid size
+* **Timestamp** - The time of the quote, as a Unix timestamp (with microsecond precision)
+
+
+## Data Format (Options)
+
+### Trade Message
+
+```go
+type OptionTrade struct
 ```
 
 * **ContractId** - Identifier for the option contract. This includes the ticker symbol, put/call, expiry, and strike price.
@@ -117,7 +162,7 @@ type Trade struct
 ### Quote Message
 
 ```go
-type Quote struct
+type OptionQuote struct
 ```
 
 * **ContractId** - Identifier for the option contract. This includes the ticker symbol, put/call, expiry, and strike price.
@@ -130,7 +175,7 @@ type Quote struct
 ### Refresh Message
 
 ```go
-type Refresh
+type OptionRefresh
 ```
 
 * **ContractId** - Identifier for the options contract. This includes the ticker symbol, put/call, expiry, and strike price.
@@ -143,7 +188,7 @@ type Refresh
 ### Unusual Activity Message
 
 ```go
-type UnusualActivity
+type OptionUnusualActivity
 ```
 
 * **ContractId** - Identifier for the options contract. This includes the ticker symbol, put/call, expiry, and strike price.
@@ -153,9 +198,9 @@ type UnusualActivity
   * **`Large`** - represents a trade of at least $100,000
   * **`Unusual Sweep`** - represents an unusually large sweep (more than 2 standard deviation above the market-wide sweep mean).
 * **Sentiment** - The sentiment of the unusual activity event
-  *    **`Neutral`** - The event was executed with apparent neutral outlook of the underlying security
-  *    **`Bullish`** - The event was executed with apparent positive outlook of the underlying security
-  *    **`Bearish`** - The event was executed with apparent negative outlook of the underlying security
+  * **`Neutral`** - The event was executed with apparent neutral outlook of the underlying security
+  * **`Bullish`** - The event was executed with apparent positive outlook of the underlying security
+  * **`Bearish`** - The event was executed with apparent negative outlook of the underlying security
 * **TotalValue** - The total value of the event in USD. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the value of the entire event.
 * **TotalSize** - The total size of the event in number of contracts. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the total number of contracts exchanged during the event.
 * **AveragePrice** - The average price at which the event was executed. 'Sweeps' and 'blocks' can be comprised of multiple trades. This is the average trade price for the entire event.
@@ -166,21 +211,23 @@ type UnusualActivity
 
 ## API Keys
 
-You will receive your Intrinio API Key after [creating an account](https://intrinio.com/signup). You will need a subscription to a [realtime data feed](https://intrinio.com/financial-market-data/options-data) as well.
+You will receive your Intrinio API Key after [creating an account](https://intrinio.com/signup). You will need a subscription to a [realtime equity data feed](https://intrinio.com/real-time-multi-exchange) or [realtime option data feed](https://intrinio.com/financial-market-data/options-data) as well.
 
-Please be sure to include you API key in the `intrinio.Config` object passed to the `intrinio.NewClient` routine.
+Please be sure to include you API key in the `intrinio.Config` object passed to either the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routine.
+
+Alternatively, you may create an environment variable, `INTRINIO_API_KEY`, and set your API key as the value. The `intrinio.LoadConfig(filename)` function will pick it up from there, automatically. 
 
 ## Documentation
 
 ### Overview
 
 The Intrinio Realtime Client will handle authorization as well as establishment and management of all necessary WebSocket connections. All you need to get started is your API key.
-The first thing that you'll do is create a new `intrinio.Client` object, passing in an `intrinio.Config` object as well as a series of callback functions. These callback methods tell the client what types of subscriptions you will be setting up.
-A helper function, `intrinio.LoadConfig()`, is provided to automatically load a `config.json` file that exists in your application's working directory. Please be sure that your API key is specified in the `intrinio.Config` object that is passed to the `intrinio.NewClient` routine.
-Creating an `intrinio.Client` object (with `intrinio.NewClient`) will initialize the object but you will need to call the client object's `Start()` method in order to open the session and start communication with the server.
+The first thing that you'll do is create a new `intrinio.Client` object using either the `NewEquitiesClient` or `NewOptionsClient` routine, passing in an `intrinio.Config` object as well as a series of callback functions. These callback methods tell the client what types of subscriptions you will be setting up.
+A helper function, `intrinio.LoadConfig(filename string)`, is provided to automatically load a `.json` file that exists in your application's working directory. Please be sure that your API key is specified in the `intrinio.Config` object that is passed to one of the `intrinio.New[Equities/Options]Client` routine.
+Creating an `intrinio.Client` object will initialize the object but you will need to call the client object's `Start()` method in order to open the session and start communication with the server.
 After an `intrinio.Client` object has been created and started, you may subscribe to receive feed updates from the server.
-You may subscribe, dynamically, to option contracts, option chains, or a mixed list thereof.
-It is also possible to subscribe to the entire universe of option contracts (i.e. the firehose) by calling the client object's `JoinLobby()` method.
+You may subscribe, dynamically, to individual or multiple ticker symbols (in the case of an Equities client) or to option contracts, option chains, or a mixed list thereof (in the case of an Options client).
+It is also possible to subscribe to the entire universe of ticker symbols or option contracts (i.e. the firehose) by calling the client object's `JoinLobby()` method.
 The volume of data provided by the `Firehose` can exceed 100Mbps and requires special authorization.
 You may update your subscriptions on the fly, using the client object's `Join` and `Leave` methods.
 The WebSocket client is designed for near-indefinite operation. It will automatically reconnect if a connection drops/fails and when then servers turn on every morning.
@@ -188,17 +235,22 @@ If you wish to perform a shutdown of the application, please call the client's `
 
 ### Methods
 
-`var client Client = NewClient(config, onTrade, onQuote, onRefresh, onUnusualActivity)` - Creates an Intrinio Real-Time client.
+`var client Client = NewEquitiesClient(config, onTrade, onQuote)` - Creates an Intrinio Real-Time client for use with a real-time equity feed (DSIP).
 * **Parameter** `config`: Required. The configuration object necessary to set up the client.
-* **Parameter** `onTrade`: Optional. The callback accepting `intrinio.Trade` updates. If `onTrade` is `nil`, you will not receive trade updates from the server.
-* **Parameter** `onQuote`: Optional. The callback accepting `intrinio.Quote` updates. If `onQuote` is `nil`, you will not receive quote (ask, bid) updates from the server.
-* **Parameter** `onRefresh`: Optional. The callback accepting `intrinio.Refresh` updates. If `onRefresh` is `nil`, you will not receive open interest, open, close, high, low data from the server. Note: open interest data is only updated at the beginning of every trading day. If this callback is provided you will recieve an update immediately, as well as every 15 minutes (approx).
-* **Parameter** `onUnusualActivity`: Optional. The callback accepting `intrinio.UnusualActivity` updats. If `onUnusualActivity` is `nil`, you will not receive unusual activity updates from the server.
+* **Parameter** `onTrade`: Required. The callback accepting `intrinio.EquityTrade` updates.
+* **Parameter** `onQuote`: Optional. The callback accepting `intrinio.EquityQuote` updates. If `onQuote` is `nil`, you will not receive quote (ask, bid) updates from the server.
+
+`var client Client = NewOptionsClient(config, onTrade, onQuote, onRefresh, onUnusualActivity)` - Creates an Intrinio Real-Time client for use with a real-time option feed (OPRA).
+* **Parameter** `config`: Required. The configuration object necessary to set up the client.
+* **Parameter** `onTrade`: Optional. The callback accepting `intrinio.OptionTrade` updates. If `onTrade` is `nil`, you will not receive trade updates from the server.
+* **Parameter** `onQuote`: Optional. The callback accepting `intrinio.OptionQuote` updates. If `onQuote` is `nil`, you will not receive quote (ask, bid) updates from the server.
+* **Parameter** `onRefresh`: Optional. The callback accepting `intrinio.OptionRefresh` updates. If `onRefresh` is `nil`, you will not receive open interest, open, close, high, low data from the server. Note: open interest data is only updated at the beginning of every trading day. If this callback is provided you will recieve an update immediately, as well as every 15 minutes (approx).
+* **Parameter** `onUnusualActivity`: Optional. The callback accepting `intrinio.OptionUnusualActivity` updats. If `onUnusualActivity` is `nil`, you will not receive unusual activity updates from the server.
 
 `client.Start()` - Starts the client (authenticates the user and establishes the websocket connection)
 `client.Stop()` - Leaves all joined channels and gracefully terminates the session. 
 
-`client.Join(symbol string)` - Joins the channel identified by the given symbol (e.g. "AAPL" or "GOOG__210917C01040000")
+`client.Join(symbol string)` - Joins the channel identified by the given symbol, contractId, or option chain (e.g. "AAPL" or "GOOG__210917C01040000")
 `client.JoinMany(symbols []string)` - Joins the channels identified by the given symbol slice (e.g. `[]string{"AAPL", "MSFT__210917C00180000", "GOOG__210917C01040000"}`)
 `client.JoinLobby()` - Joins the lobby (i.e. 'Firehose') channel. This requires special account permissions.
 
@@ -209,17 +261,24 @@ If you wish to perform a shutdown of the application, please call the client's `
 
 ## Configuration
 
-Configuration is done through a configuration object (`intrinio.Config`) that is passed to the `intrinio.NewClient` routine. You may create a configuration directly in code using:
+Configuration is done through a configuration object (`intrinio.Config`) that is passed to the `intrinio.New[Equities/Options]Client` routine. You may create a configuration directly, in code, like so:
 
 ```go
-var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "OPRA"}
+var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "OPRA/DSIP"}
 ```
- 
- Or, you can create a `config.json` file, of the following form, and place it in your application root. An example of this is provided in the sample project.
+
+ Or, you can create `.json` config files, of the following form, and place them in your application root. An example of this is provided in the sample project.
+
 
 ```json
 {
 	"ApiKey": "YOUR-API-KEY",
-	"Provider": "OPRA",
+	"Provider": "OPRA/DSIP",
 }
+```
+
+You can then create your config objects using:
+
+```go
+var config intrinio.Config = intrinio.LoadConfig("[options/equities]Config.json")
 ```
