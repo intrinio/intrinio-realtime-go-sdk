@@ -12,8 +12,10 @@ func main() {
 	close := make(chan os.Signal, 1)
 	signal.Notify(close, syscall.SIGINT, syscall.SIGTERM)
 	//client := runOptionsExample()
-	client := runEquitiesExample()
+	eClient := runEquitiesExample()
+	oClient := runOptionsExample()
 	<-close
 	log.Println("EXAMPLE - Closing")
-	client.Stop()
+	eClient.Stop()
+	oClient.Stop()
 }

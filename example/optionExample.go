@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intrinio/intrinio-realtime-options-go-sdk"
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 var oRefreshCount int = 0
@@ -21,7 +21,7 @@ func handleOptionRefresh(refresh intrinio.OptionRefresh) {
 	oRefreshCountLock.Lock()
 	oRefreshCount++
 	oRefreshCountLock.Unlock()
-	// if refreshCount%100000 == 0 {
+	// if oRefreshCount%100000 == 0 {
 	// 	log.Printf("%+v\n", refresh)
 	// }
 }
@@ -30,7 +30,7 @@ func handleOptionTrade(trade intrinio.OptionTrade) {
 	oTradeCountLock.Lock()
 	oTradeCount++
 	oTradeCountLock.Unlock()
-	// if tradeCount%20 == 0 {
+	// if oTradeCount%20 == 0 {
 	// 	log.Printf("%+v\n", trade)
 	// }
 }
@@ -39,7 +39,7 @@ func handleOptionQuote(quote intrinio.OptionQuote) {
 	oQuoteCountLock.Lock()
 	oQuoteCount++
 	oQuoteCountLock.Unlock()
-	// if quoteCount%200 == 0 {
+	// if oQuoteCount%100 == 0 {
 	// 	log.Printf("%+v\n", quote)
 	// }
 }
@@ -76,10 +76,10 @@ func runOptionsExample() *intrinio.Client {
 	client.Start()
 	//symbols := []string{"SPY_230306C404.00", "SPY_230306C405.00", "SPY_230306C406.00"}
 	//symbols := []string{"SPY", "AAPL", "SPX", "MSFT", "GE", "TSLA"}
-	//symbols := []string{"SPX", "SPXW"}
+	symbols := []string{"AAPL", "MSFT"}
 	//client.Join("GE")
-	//client.JoinMany(symbols)
-	client.JoinLobby()
+	client.JoinMany(symbols)
+	//client.JoinLobby()
 	var ticker *time.Ticker = time.NewTicker(30 * time.Second)
 	go reportOptions(ticker.C)
 	return client

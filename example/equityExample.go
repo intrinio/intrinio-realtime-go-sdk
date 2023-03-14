@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intrinio/intrinio-realtime-options-go-sdk"
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 var eTradeCount int = 0
@@ -17,7 +17,7 @@ func handleEquityTrade(trade intrinio.EquityTrade) {
 	eTradeCountLock.Lock()
 	eTradeCount++
 	eTradeCountLock.Unlock()
-	// if tradeCount%20 == 0 {
+	// if eTradeCount%10 == 0 {
 	// 	log.Printf("%+v\n", trade)
 	// }
 }
@@ -26,7 +26,7 @@ func handleEquityQuote(quote intrinio.EquityQuote) {
 	eQuoteCountLock.Lock()
 	eQuoteCount++
 	eQuoteCountLock.Unlock()
-	// if quoteCount%200 == 0 {
+	// if eQuoteCount%100 == 0 {
 	// 	log.Printf("%+v\n", quote)
 	// }
 }
@@ -48,9 +48,9 @@ func runEquitiesExample() *intrinio.Client {
 	var config intrinio.Config = intrinio.LoadConfig("equities-config.json")
 	var client *intrinio.Client = intrinio.NewEquitiesClient(config, handleEquityTrade, handleEquityQuote)
 	client.Start()
-	//symbols := []string{"AAPL", "MSFT"}
-	client.Join("GOOG")
-	//client.JoinMany(symbols)
+	symbols := []string{"AAPL", "MSFT"}
+	//client.Join("GOOG")
+	client.JoinMany(symbols)
 	//client.JoinLobby()
 	var ticker *time.Ticker = time.NewTicker(30 * time.Second)
 	go reportEquities(ticker.C)
