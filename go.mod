@@ -1,4 +1,4 @@
-module github.com/intrinio/intrinio-realtime-options-go-sdk
+module github.com/intrinio/intrinio-realtime-go-sdk
 
 go 1.20
 
