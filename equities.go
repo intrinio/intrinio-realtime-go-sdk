@@ -16,7 +16,7 @@ type EquityTrade struct {
 	Price       float32
 	Size        uint32
 	TotalVolume uint32
-	Timestamp   uint64
+	Timestamp   float64
 }
 
 func parseEquityTrade(bytes []byte, symbolLen int) EquityTrade {
@@ -24,7 +24,7 @@ func parseEquityTrade(bytes []byte, symbolLen int) EquityTrade {
 		Symbol:      string(bytes[2 : 2+symbolLen]),
 		Price:       math.Float32frombits(binary.LittleEndian.Uint32(bytes[2+symbolLen : 6+symbolLen])),
 		Size:        binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen]),
-		Timestamp:   binary.LittleEndian.Uint64(bytes[10+symbolLen:18+symbolLen]) / 100,
+		Timestamp:   float64(binary.LittleEndian.Uint64(bytes[10+symbolLen:18+symbolLen])) / 1000000000.0,
 		TotalVolume: binary.LittleEndian.Uint32(bytes[18+symbolLen : 22+symbolLen]),
 	}
 }
@@ -41,7 +41,7 @@ type EquityQuote struct {
 	Symbol    string
 	Price     float32
 	Size      uint32
-	Timestamp uint64
+	Timestamp float64
 }
 
 func parseEquityQuote(bytes []byte, symbolLen int) EquityQuote {
@@ -50,7 +50,7 @@ func parseEquityQuote(bytes []byte, symbolLen int) EquityQuote {
 		Symbol:    string(bytes[2 : 2+symbolLen]),
 		Price:     math.Float32frombits(binary.LittleEndian.Uint32(bytes[2+symbolLen : 6+symbolLen])),
 		Size:      binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen]),
-		Timestamp: binary.LittleEndian.Uint64(bytes[10+symbolLen:18+symbolLen]) / 100,
+		Timestamp: float64(binary.LittleEndian.Uint64(bytes[10+symbolLen:18+symbolLen])) / 1000000000.0,
 	}
 }
 
