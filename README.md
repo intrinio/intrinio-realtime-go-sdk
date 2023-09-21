@@ -151,13 +151,60 @@ type OptionTrade struct
 ```
 
 * **ContractId** - Identifier for the option contract. This includes the ticker symbol, put/call, expiry, and strike price.
+* **Exchange** - The specific exchange through which the trade occurred (enum)
 * **Price** - The trade price in USD
 * **Size** - The size of the trade (note: each contract represents a lot of 100 underlying shares).
+* **Qualifiers** - A 4-byte array: each byte represents one trade qualifier. see list of possible [Trade Qualifiers](#trade-qualifiers), below.
 * **TotalVolume** - The total number of contracts (with the given Id) traded so far, today.
 * **Timestamp** - The time of the trade, as a Unix timestamp (with microsecond precision)
 * **AskPriceAtExecution** - The best, last ask price in USD
 * **BidPriceAtExecution** - The best, last bid price in USD
 * **UnderlyingPriceAtExecution** - The price of the underlying security in USD
+
+### Trade Qualifiers
+
+The trade qualifiers field is represented by a tuple containing 4 integers. Each integer can take one of the following values:
+* **`0`** - Regular transaction
+* **`2`** - Cancel
+* **`3`** - This is the last price and it's cancelled
+* **`4`** - Late but in sequence / sold last late
+* **`5`** - This was the open price and it's cancelled
+* **`6`** - Late report of opening trade and is out of sequence: or set the open
+* **`7`** - Cancel only trade reported
+* **`8`** - Transaction was executed electronically
+* **`9`** - Reopen of a previously halted contract
+* **`11`** - Spread
+* **`23`** - Intermarket Sweep
+* **`30`** - Extended hours
+* **`33`** - Crossed trade including Request For Cross RFC
+* **`87`** - Complex trade with equity leg
+* **`107`** - Auction
+* **`123`** - Stock option trade
+* **`136`** - Ex-Pit trade
+* **`192`** - Message received locally out-of-sequence
+* **`222`** - Combo trade
+* **`0`** - Blank
+
+Each trade can be qualified by a maximum of 4(four) values. The combination of these values can have special values. These special values are:
+
+* **`107, 23`** - Single leg auction ISO
+* **`23, 33`** - Single leg cross ISO
+* **`8, 11`** - Multi leg auto-electronic trade
+* **`107, 11`** - Multi leg auction
+* **`11, 33`** - Multi leg cross
+* **`136, 11`** - Multi leg floor trade
+* **`8, 11, 87`** - Multi leg auto-electronic trade against single leg(s)
+* **`107, 123`** - Stock options auction
+* **`107, 11, 87`** - Multi leg auction against single leg(s)
+* **`136, 11, 87`** - Multi leg floor trade against single leg(s)
+* **`8, 123`** - Stock options auto-electronic trade
+* **`123, 33`** - Stock options cross
+* **`136, 123`** - Stock options floor trade
+* **`8, 87, 123`** - Stock options auto-electronic trade against single leg(s)
+* **`107, 87, 123`** - Stock options auction against single leg(s)
+* **`136, 87, 123`** - Stock options floor trade against single leg(s)
+* **`136, 11, 222`** - Multi leg floor trade of proprietary products
+* **`222, 30`** - Multilateral Compression Trade of Proprietary Data Products
 
 ### Quote Message
 
