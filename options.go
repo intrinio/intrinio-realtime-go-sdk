@@ -9,6 +9,68 @@ import (
 	"time"
 )
 
+type Exchange uint8
+
+func (e Exchange) String() string {
+	switch e {
+	case 'A':
+		return "NYSE_AMERICAN"
+	case 'B':
+		return "BOSTON"
+	case 'C':
+		return "CBOE"
+	case 'D':
+		return "MIAMI_EMERALD"
+	case 'E':
+		return "BATS_EDGX"
+	case 'H':
+		return "ISE_GEMINI"
+	case 'I':
+		return "ISE"
+	case 'J':
+		return "MERCURY"
+	case 'M':
+		return "MIAMI"
+	case 'O':
+		return "MIAMI_PEARL"
+	case 'P':
+		return "NYSE_ARCA"
+	case '!':
+		return "NASDAQ"
+	case 'T':
+		return "NASDAQ_BX"
+	case 'U':
+		return "MEMX"
+	case 'W':
+		return "CBOE_C2"
+	case 'X':
+		return "PHLX"
+	case 'Z':
+		return "BATS_BZX"
+	}
+	return "unknown"
+}
+
+const (
+	NYSE_AMERICAN Exchange = 'A'
+	BOSTON        Exchange = 'B'
+	CBOE          Exchange = 'C'
+	MIAMI_EMERALD Exchange = 'D'
+	BATS_EDGX     Exchange = 'E'
+	ISE_GEMINI    Exchange = 'H'
+	ISE           Exchange = 'I'
+	MERCURY       Exchange = 'J'
+	MIAMI         Exchange = 'M'
+	MIAMI_PEARL   Exchange = 'O'
+	NYSE_ARCA     Exchange = 'P'
+	NASDAQ        Exchange = 'Q'
+	NASDAQ_BX     Exchange = 'T'
+	MEMX          Exchange = 'U'
+	CBOE_C2       Exchange = 'W'
+	PHLX          Exchange = 'X'
+	BATS_BZX      Exchange = 'Z'
+)
+
 const (
 	MAX_OPTION_SYMBOL_SIZE  int = 21
 	OPTION_TRADE_MSG_SIZE   int = 72
@@ -85,8 +147,10 @@ var newYork, loadLocationErr = time.LoadLocation("America/New_York")
 
 type OptionTrade struct {
 	ContractId                 string
+	Exchange                   Exchange
 	Price                      float32
 	Size                       uint32
+	Qualifiers                 [4]byte
 	TotalVolume                uint64
 	AskPriceAtExecution        float32
 	BidPriceAtExecution        float32
@@ -133,6 +197,8 @@ func parseOptionTrade(bytes []byte) OptionTrade {
 		AskPriceAtExecution:        extractUInt32Price(bytes[49:53], bytes[23]),
 		BidPriceAtExecution:        extractUInt32Price(bytes[53:57], bytes[23]),
 		UnderlyingPriceAtExecution: extractUInt32Price(bytes[57:61], bytes[24]),
+		Qualifiers:                 [4]byte(bytes[61:65]),
+		Exchange:                   Exchange(bytes[65]),
 	}
 }
 

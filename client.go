@@ -84,7 +84,7 @@ func NewOptionsClient(
 		client.workerCount++
 	}
 	if onQuote != nil {
-		client.workerCount += 6
+		client.workerCount += 8
 	}
 	client.work = func() {
 		for {
@@ -168,7 +168,7 @@ func (client *Client) trySetToken() bool {
 		log.Printf("Client - Authorization Failure: %v\n", httpNewReqErr)
 		return false
 	}
-	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv1.0")
+	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv2.0")
 	resp, httpDoErr := client.httpClient.Do(req)
 	if httpDoErr != nil {
 		log.Printf("Client - Authorization Failure: %v\n", httpDoErr)
@@ -201,11 +201,12 @@ func (client *Client) getToken() string {
 func (client *Client) initWebSocket(token string) {
 	log.Println("Client - Connecting...")
 	wsUrl := client.config.getWSUrl(token)
+	wsHeader := map[string][]string{"UseNewEquitiesFormat": {"v2"}, "Client-Information": {"IntrinioRealtimeOptionsGoSDKv2.0"}}
 	dialer := websocket.Dialer{
 		ReadBufferSize:  10240,
 		WriteBufferSize: 128,
 	}
-	conn, resp, dialErr := dialer.Dial(wsUrl, nil)
+	conn, resp, dialErr := dialer.Dial(wsUrl, wsHeader)
 	if dialErr != nil {
 		log.Printf("Client - Connection failure: %v\n", dialErr)
 		return
@@ -221,11 +222,12 @@ func (client *Client) initWebSocket(token string) {
 
 func (client *Client) tryResetWebSocket() bool {
 	wsUrl := client.config.getWSUrl(client.token)
+	wsHeader := map[string][]string{"UseNewEquitiesFormat": {"true"}}
 	dialer := websocket.Dialer{
 		ReadBufferSize:  10240,
 		WriteBufferSize: 128,
 	}
-	conn, resp, dialErr := dialer.Dial(wsUrl, nil)
+	conn, resp, dialErr := dialer.Dial(wsUrl, wsHeader)
 	if dialErr != nil {
 		return false
 	}
@@ -270,7 +272,7 @@ func (client *Client) write() {
 			client.wsConn.WriteControl(
 				websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-				time.Now().Add(time.Second))
+				time.Now().Add(time.Second*2))
 			return
 		}
 		if client.isClosed {
