@@ -168,7 +168,7 @@ func (client *Client) trySetToken() bool {
 		log.Printf("Client - Authorization Failure: %v\n", httpNewReqErr)
 		return false
 	}
-	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv2.0")
+	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv2.1")
 	resp, httpDoErr := client.httpClient.Do(req)
 	if httpDoErr != nil {
 		log.Printf("Client - Authorization Failure: %v\n", httpDoErr)
@@ -201,7 +201,7 @@ func (client *Client) getToken() string {
 func (client *Client) initWebSocket(token string) {
 	log.Println("Client - Connecting...")
 	wsUrl := client.config.getWSUrl(token)
-	wsHeader := map[string][]string{"UseNewEquitiesFormat": {"v2"}, "Client-Information": {"IntrinioRealtimeOptionsGoSDKv2.0"}}
+	wsHeader := map[string][]string{"UseNewEquitiesFormat": {"v2"}, "Client-Information": {"IntrinioRealtimeOptionsGoSDKv2.1"}}
 	dialer := websocket.Dialer{
 		ReadBufferSize:  10240,
 		WriteBufferSize: 128,

@@ -14,6 +14,7 @@ const (
 	IEX          Provider = "IEX"
 	DELAYED_SIP  Provider = "DELAYED_SIP"
 	NASDAQ_BASIC Provider = "NASDAQ_BASIC"
+	CBOE_ONE     Provider = "CBOE_ONE"
 	MANUAL       Provider = "MANUAL"
 )
 
@@ -30,6 +31,8 @@ func (config Config) getAuthUrl() string {
 		return ("https://realtime-delayed-sip.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "NASDAQ_BASIC" {
 		return ("https://realtime-nasdaq-basic.intrinio.com/auth?api_key=" + config.ApiKey)
+	} else if config.Provider == "CBOE_ONE" {
+		return ("https://cboe-one.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "IEX" {
 		return ("https://realtime-mx.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "MANUAL" {
@@ -46,6 +49,8 @@ func (config Config) getWSUrl(token string) string {
 		return ("wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
 	} else if config.Provider == "NASDAQ_BASIC" {
 		return ("wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+	} else if config.Provider == "CBOE_ONE" {
+		return ("wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
 	} else if config.Provider == "IEX" {
 		return ("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
 	} else if config.Provider == "MANUAL" {
@@ -81,6 +86,7 @@ func LoadConfig(filename string) Config {
 		(config.Provider != "DELAYED_SIP") &&
 		(config.Provider != "NASDAQ_BASIC") &&
 		(config.Provider != "IEX") &&
+		(config.Provider != "CBOE_ONE") &&
 		(config.Provider != "MANUAL") {
 		log.Fatal("Client - Config must specify a valid provider")
 	}

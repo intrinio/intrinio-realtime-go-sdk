@@ -109,8 +109,11 @@ Note that quotes (ask and bid updates) comprise 90-99% of the volume of the enti
 
 Currently, Intrino offers realtime data for this SDK from the following providers:
 
-* DSIP - Delayed SIP
+* DELAYED_SIP
 * OPRA - The Option Price Reporting Authority
+* IEX
+* NASDAQ_BASIC
+* CBOE_ONE
 
 Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DSIP should be specified for an equities client and OPRA should be specified for an options client.
 
@@ -127,6 +130,7 @@ type EquityTrade struct
 * **Size** - The size of the trade
 * **TotalVolume** - The total number of shares traded so far, today.
 * **Timestamp** - The time of the trade, as a Unix timestamp (with microsecond precision)
+* **Source** - The sub-source for this trade. NONE = 0, CTA_A = 1, CTA_B = 2, UTP = 3, OTC = 4, NASDAQ_BASIC = 5, IEX = 6, CBOE_ONE = 7
 
 ### Quote Message
 
@@ -140,6 +144,102 @@ type EquityQuote struct
 * **Price** - The last, best ask or bid price in USD
 * **Size** - The last, best ask or bid size
 * **Timestamp** - The time of the quote, as a Unix timestamp (with microsecond precision)
+
+### Trade Conditions (Equities)
+
+| Value | Description                                       |
+|-------|---------------------------------------------------|
+| @     | Regular Sale                                      |
+| A     | Acquisition                                       |
+| B     | Bunched Trade                                     |
+| C     | Cash Sale                                         |
+| D     | Distribution                                      |
+| E     | Placeholder                                       |
+| F     | Intermarket Sweep                                 |
+| G     | Bunched Sold Trade                                |
+| H     | Priced Variation Trade                            |
+| I     | Odd Lot Trade                                     |
+| K     | Rule 155 Trade (AMEX)                             |
+| L     | Sold Last                                         |
+| M     | Market Center Official Close                      |
+| N     | Next Day                                          |
+| O     | Opening Prints                                    |
+| P     | Prior Reference Price                             |
+| Q     | Market Center Official Open                       |
+| R     | Seller                                            |
+| S     | Split Trade                                       |
+| T     | Form T                                            |
+| U     | Extended Trading Hours (Sold Out of Sequence)     |
+| V     | Contingent Trade                                  |
+| W     | Average Price Trade                               |
+| X     | Cross/Periodic Auction Trade                      |
+| Y     | Yellow Flag Regular Trade                         |
+| Z     | Sold (Out of Sequence)                            |
+| 1     | Stopped Stock (Regular Trade)                     |
+| 4     | Derivatively Priced                               |
+| 5     | Re-Opening Prints                                 |
+| 6     | Closing Prints                                    |
+| 7     | Qualified Contingent Trade (QCT)                  |
+| 8     | Placeholder for 611 Exempt                        |
+| 9     | Corrected Consolidated Close (Per Listing Market) |
+
+
+### Equities Trade Conditions (CBOE One)
+Trade conditions for CBOE One are represented as the integer representation of a bit flag.
+
+None                      = 0,
+UpdateHighLowConsolidated = 1,
+UpdateLastConsolidated    = 2,
+UpdateHighLowMarketCenter = 4,
+UpdateLastMarketCenter    = 8,
+UpdateVolumeConsolidated  = 16,
+OpenConsolidated          = 32,
+OpenMarketCenter          = 64,
+CloseConsolidated         = 128,
+CloseMarketCenter         = 256,
+UpdateVolumeMarketCenter  = 512
+
+
+### Equities Quote Conditions
+
+| Value | Description                                 |
+|-------|---------------------------------------------|
+| R     | Regular                                     |
+| A     | Slow on Ask                                 |
+| B     | Slow on Bid                                 |
+| C     | Closing                                     |
+| D     | News Dissemination                          |
+| E     | Slow on Bid (LRP or Gap Quote)              |
+| F     | Fast Trading                                |
+| G     | Trading Range Indication                    |
+| H     | Slow on Bid and Ask                         |
+| I     | Order Imbalance                             |
+| J     | Due to Related - News Dissemination         |
+| K     | Due to Related - News Pending               |
+| O     | Open                                        |
+| L     | Closed                                      |
+| M     | Volatility Trading Pause                    |
+| N     | Non-Firm Quote                              |
+| O     | Opening                                     |
+| P     | News Pending                                |
+| S     | Due to Related                              |
+| T     | Resume                                      |
+| U     | Slow on Bid and Ask (LRP or Gap Quote)      |
+| V     | In View of Common                           |
+| W     | Slow on Bid and Ask (Non-Firm)              |
+| X     | Equipment Changeover                        |
+| Y     | Sub-Penny Trading                           |
+| Z     | No Open / No Resume                         |
+| 1     | Market Wide Circuit Breaker Level 1         |
+| 2     | Market Wide Circuit Breaker Level 2         |        
+| 3     | Market Wide Circuit Breaker Level 3         |
+| 4     | On Demand Intraday Auction                  |        
+| 45    | Additional Information Required (CTS)       |      
+| 46    | Regulatory Concern (CTS)                    |     
+| 47    | Merger Effective                            |    
+| 49    | Corporate Action (CTS)                      |   
+| 50    | New Security Offering (CTS)                 |  
+| 51    | Intraday Indicative Value Unavailable (CTS) |
 
 
 ## Data Format (Options)
