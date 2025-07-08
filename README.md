@@ -115,7 +115,7 @@ Currently, Intrino offers realtime data for this SDK from the following provider
 * NASDAQ_BASIC
 * CBOE_ONE
 
-Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DSIP should be specified for an equities client and OPRA should be specified for an options client.
+Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DELAYED_SIP, NASDAQ_BASIC, IEX, or CBOE_ONE should be specified for an equities client and OPRA should be specified for an options client.
 
 ## Data Format (Equities)
 
@@ -382,7 +382,7 @@ If you wish to perform a shutdown of the application, please call the client's `
 
 ### Methods
 
-`var client Client = NewEquitiesClient(config, onTrade, onQuote)` - Creates an Intrinio Real-Time client for use with a real-time equity feed (DSIP).
+`var client Client = NewEquitiesClient(config, onTrade, onQuote)` - Creates an Intrinio Real-Time client for use with a real-time equity feed (DELAYED_SIP, NASDAQ_BASIC, IEX, CBOE_ONE).
 * **Parameter** `config`: Required. The configuration object necessary to set up the client.
 * **Parameter** `onTrade`: Required. The callback accepting `intrinio.EquityTrade` updates.
 * **Parameter** `onQuote`: Optional. The callback accepting `intrinio.EquityQuote` updates. If `onQuote` is `nil`, you will not receive quote (ask, bid) updates from the server.
@@ -411,7 +411,7 @@ If you wish to perform a shutdown of the application, please call the client's `
 Configuration is done through a configuration object (`intrinio.Config`) that is passed to the `intrinio.New[Equities/Options]Client` routine. You may create a configuration directly, in code, like so:
 
 ```go
-var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "OPRA/DSIP"}
+var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "DELAYED_SIP"}
 ```
 
  Or, you can create `.json` config files, of the following form, and place them in your application root. An example of this is provided in the sample project.
@@ -420,7 +420,7 @@ var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "
 ```json
 {
 	"ApiKey": "YOUR-API-KEY",
-	"Provider": "OPRA/DSIP",
+	"Provider": "DELAYED_SIP",
 }
 ```
 
