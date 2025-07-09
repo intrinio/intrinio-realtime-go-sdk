@@ -109,10 +109,13 @@ Note that quotes (ask and bid updates) comprise 90-99% of the volume of the enti
 
 Currently, Intrino offers realtime data for this SDK from the following providers:
 
-* DSIP - Delayed SIP
+* DELAYED_SIP
 * OPRA - The Option Price Reporting Authority
+* IEX
+* NASDAQ_BASIC
+* CBOE_ONE
 
-Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DSIP should be specified for an equities client and OPRA should be specified for an options client.
+Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DELAYED_SIP, NASDAQ_BASIC, IEX, or CBOE_ONE should be specified for an equities client and OPRA should be specified for an options client.
 
 ## Data Format (Equities)
 
@@ -127,6 +130,7 @@ type EquityTrade struct
 * **Size** - The size of the trade
 * **TotalVolume** - The total number of shares traded so far, today.
 * **Timestamp** - The time of the trade, as a Unix timestamp (with microsecond precision)
+* **Source** - The sub-source for this trade. NONE = 0, CTA_A = 1, CTA_B = 2, UTP = 3, OTC = 4, NASDAQ_BASIC = 5, IEX = 6, CBOE_ONE = 7
 
 ### Quote Message
 
@@ -140,6 +144,102 @@ type EquityQuote struct
 * **Price** - The last, best ask or bid price in USD
 * **Size** - The last, best ask or bid size
 * **Timestamp** - The time of the quote, as a Unix timestamp (with microsecond precision)
+
+### Trade Conditions (Equities)
+
+| Value | Description                                       |
+|-------|---------------------------------------------------|
+| @     | Regular Sale                                      |
+| A     | Acquisition                                       |
+| B     | Bunched Trade                                     |
+| C     | Cash Sale                                         |
+| D     | Distribution                                      |
+| E     | Placeholder                                       |
+| F     | Intermarket Sweep                                 |
+| G     | Bunched Sold Trade                                |
+| H     | Priced Variation Trade                            |
+| I     | Odd Lot Trade                                     |
+| K     | Rule 155 Trade (AMEX)                             |
+| L     | Sold Last                                         |
+| M     | Market Center Official Close                      |
+| N     | Next Day                                          |
+| O     | Opening Prints                                    |
+| P     | Prior Reference Price                             |
+| Q     | Market Center Official Open                       |
+| R     | Seller                                            |
+| S     | Split Trade                                       |
+| T     | Form T                                            |
+| U     | Extended Trading Hours (Sold Out of Sequence)     |
+| V     | Contingent Trade                                  |
+| W     | Average Price Trade                               |
+| X     | Cross/Periodic Auction Trade                      |
+| Y     | Yellow Flag Regular Trade                         |
+| Z     | Sold (Out of Sequence)                            |
+| 1     | Stopped Stock (Regular Trade)                     |
+| 4     | Derivatively Priced                               |
+| 5     | Re-Opening Prints                                 |
+| 6     | Closing Prints                                    |
+| 7     | Qualified Contingent Trade (QCT)                  |
+| 8     | Placeholder for 611 Exempt                        |
+| 9     | Corrected Consolidated Close (Per Listing Market) |
+
+
+### Equities Trade Conditions (CBOE One)
+Trade conditions for CBOE One are represented as the integer representation of a bit flag.
+
+None                      = 0,
+UpdateHighLowConsolidated = 1,
+UpdateLastConsolidated    = 2,
+UpdateHighLowMarketCenter = 4,
+UpdateLastMarketCenter    = 8,
+UpdateVolumeConsolidated  = 16,
+OpenConsolidated          = 32,
+OpenMarketCenter          = 64,
+CloseConsolidated         = 128,
+CloseMarketCenter         = 256,
+UpdateVolumeMarketCenter  = 512
+
+
+### Equities Quote Conditions
+
+| Value | Description                                 |
+|-------|---------------------------------------------|
+| R     | Regular                                     |
+| A     | Slow on Ask                                 |
+| B     | Slow on Bid                                 |
+| C     | Closing                                     |
+| D     | News Dissemination                          |
+| E     | Slow on Bid (LRP or Gap Quote)              |
+| F     | Fast Trading                                |
+| G     | Trading Range Indication                    |
+| H     | Slow on Bid and Ask                         |
+| I     | Order Imbalance                             |
+| J     | Due to Related - News Dissemination         |
+| K     | Due to Related - News Pending               |
+| O     | Open                                        |
+| L     | Closed                                      |
+| M     | Volatility Trading Pause                    |
+| N     | Non-Firm Quote                              |
+| O     | Opening                                     |
+| P     | News Pending                                |
+| S     | Due to Related                              |
+| T     | Resume                                      |
+| U     | Slow on Bid and Ask (LRP or Gap Quote)      |
+| V     | In View of Common                           |
+| W     | Slow on Bid and Ask (Non-Firm)              |
+| X     | Equipment Changeover                        |
+| Y     | Sub-Penny Trading                           |
+| Z     | No Open / No Resume                         |
+| 1     | Market Wide Circuit Breaker Level 1         |
+| 2     | Market Wide Circuit Breaker Level 2         |        
+| 3     | Market Wide Circuit Breaker Level 3         |
+| 4     | On Demand Intraday Auction                  |        
+| 45    | Additional Information Required (CTS)       |      
+| 46    | Regulatory Concern (CTS)                    |     
+| 47    | Merger Effective                            |    
+| 49    | Corporate Action (CTS)                      |   
+| 50    | New Security Offering (CTS)                 |  
+| 51    | Intraday Indicative Value Unavailable (CTS) |
 
 
 ## Data Format (Options)
@@ -282,7 +382,7 @@ If you wish to perform a shutdown of the application, please call the client's `
 
 ### Methods
 
-`var client Client = NewEquitiesClient(config, onTrade, onQuote)` - Creates an Intrinio Real-Time client for use with a real-time equity feed (DSIP).
+`var client Client = NewEquitiesClient(config, onTrade, onQuote)` - Creates an Intrinio Real-Time client for use with a real-time equity feed (DELAYED_SIP, NASDAQ_BASIC, IEX, CBOE_ONE).
 * **Parameter** `config`: Required. The configuration object necessary to set up the client.
 * **Parameter** `onTrade`: Required. The callback accepting `intrinio.EquityTrade` updates.
 * **Parameter** `onQuote`: Optional. The callback accepting `intrinio.EquityQuote` updates. If `onQuote` is `nil`, you will not receive quote (ask, bid) updates from the server.
@@ -311,7 +411,7 @@ If you wish to perform a shutdown of the application, please call the client's `
 Configuration is done through a configuration object (`intrinio.Config`) that is passed to the `intrinio.New[Equities/Options]Client` routine. You may create a configuration directly, in code, like so:
 
 ```go
-var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "OPRA/DSIP"}
+var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "DELAYED_SIP"}
 ```
 
  Or, you can create `.json` config files, of the following form, and place them in your application root. An example of this is provided in the sample project.
@@ -320,7 +420,7 @@ var config intrinio.Config = intrinio.Config{ApiKey: "YOUR-API-KEY", Provider: "
 ```json
 {
 	"ApiKey": "YOUR-API-KEY",
-	"Provider": "OPRA/DSIP",
+	"Provider": "DELAYED_SIP",
 }
 ```
 

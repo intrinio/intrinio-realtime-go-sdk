@@ -1,5 +1,5 @@
 {
 	"ApiKey": "",
-	"Provider": "DSIP",
+	"Provider": "DELAYED_SIP",
 	"IPAddress": ""
 }
