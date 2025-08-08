@@ -22,6 +22,7 @@ type Config struct {
 	ApiKey    string
 	Provider  Provider
 	IPAddress string
+	Delayed   bool
 }
 
 func (config Config) getAuthUrl() string {
@@ -43,8 +44,13 @@ func (config Config) getAuthUrl() string {
 }
 
 func (config Config) getWSUrl(token string) string {
+	delayedPart := ""
+	if config.Delayed == true {
+		delayedPart = "&delayed=true"
+	}
+
 	if config.Provider == "OPRA" {
-		return ("wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "DELAYED_SIP" {
 		return ("wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
 	} else if config.Provider == "NASDAQ_BASIC" {

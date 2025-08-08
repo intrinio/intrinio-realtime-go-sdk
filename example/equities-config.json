@@ -1,5 +1,5 @@
 {
 	"ApiKey": "",
-	"Provider": "DELAYED_SIP",
+	"Provider": "NASDAQ_BASIC",
 	"IPAddress": ""
 }

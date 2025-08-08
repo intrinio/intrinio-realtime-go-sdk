@@ -9,12 +9,18 @@ import (
 
 func main() {
 	log.Println("EXAMPLE - Starting")
+	
 	close := make(chan os.Signal, 1)
 	signal.Notify(close, syscall.SIGINT, syscall.SIGTERM)
 	//eClient := runEquitiesExample()
-	oClient := runOptionsExample()
+	//oClient := runOptionsExample()
+	gClient := NewGreekSampleApp() 
+	gClient.runGreekExample()
+	
 	<-close
+	
 	log.Println("EXAMPLE - Closing")
-	oClient.Stop()
+	//oClient.Stop()
 	//eClient.Stop()
+	gClient.Stop()
 }
