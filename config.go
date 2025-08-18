@@ -16,6 +16,7 @@ const (
 	NASDAQ_BASIC Provider = "NASDAQ_BASIC"
 	CBOE_ONE     Provider = "CBOE_ONE"
 	MANUAL       Provider = "MANUAL"
+	OPTIONS_EDGE Provider = "OPTIONS_EDGE"
 )
 
 type Config struct {
@@ -28,6 +29,8 @@ type Config struct {
 func (config Config) getAuthUrl() string {
 	if config.Provider == "OPRA" {
 		return ("https://realtime-options.intrinio.com/auth?api_key=" + config.ApiKey)
+	} else if config.Provider == "OPTIONS_EDGE" {
+		return ("https://options-edge.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "DELAYED_SIP" {
 		return ("https://realtime-delayed-sip.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "NASDAQ_BASIC" {
@@ -51,16 +54,18 @@ func (config Config) getWSUrl(token string) string {
 
 	if config.Provider == "OPRA" {
 		return ("wss://realtime-options.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
+	} else if config.Provider == "OPTIONS_EDGE" {
+		return ("wss://options-edge.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "DELAYED_SIP" {
-		return ("wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("wss://realtime-delayed-sip.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "NASDAQ_BASIC" {
-		return ("wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "CBOE_ONE" {
-		return ("wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "IEX" {
-		return ("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "MANUAL" {
-		return ("ws://" + config.IPAddress + "/socket/websocket?vsn=1.0.0&token=" + token)
+		return ("ws://" + config.IPAddress + "/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else {
 		panic("Client - Provider not specified in config")
 	}
@@ -93,6 +98,7 @@ func LoadConfig(filename string) Config {
 		(config.Provider != "NASDAQ_BASIC") &&
 		(config.Provider != "IEX") &&
 		(config.Provider != "CBOE_ONE") &&
+		(config.Provider != "OPTIONS_EDGE") &&
 		(config.Provider != "MANUAL") {
 		log.Fatal("Client - Config must specify a valid provider")
 	}
