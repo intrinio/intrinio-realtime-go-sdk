@@ -111,6 +111,7 @@ Currently, Intrino offers realtime data for this SDK from the following provider
 
 * DELAYED_SIP
 * OPRA - The Option Price Reporting Authority
+* OPTIONS_EDGE
 * IEX
 * NASDAQ_BASIC
 * CBOE_ONE
