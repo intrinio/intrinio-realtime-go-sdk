@@ -17,6 +17,8 @@ type optionsContractData struct {
 	latestBidQuoteCandleStick       *OptionsQuoteCandleStick
 	supplementaryData               map[string]*float64
 	supplementaryDataMutex          sync.RWMutex
+	greekData                       map[string]*Greek
+	greekDataMutex                  sync.RWMutex
 }
 
 // NewOptionsContractData creates a new OptionsContractData instance
@@ -24,6 +26,7 @@ func NewOptionsContractData(contract string) OptionsContractData {
 	return &optionsContractData{
 		contract:              contract,
 		supplementaryData:     make(map[string]*float64),
+		greekData:             make(map[string]*Greek),
 	}
 }
 
@@ -86,7 +89,7 @@ func (o *optionsContractData) SetTradeWithCallback(trade *intrinio.OptionTrade, 
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, trade)
 		}()
 	}
 	return result
@@ -111,7 +114,7 @@ func (o *optionsContractData) SetQuoteWithCallback(quote *intrinio.OptionQuote, 
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, quote)
 		}()
 	}
 	return result
@@ -133,7 +136,7 @@ func (o *optionsContractData) SetRefreshWithCallback(refresh *intrinio.OptionRef
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, refresh)
 		}()
 	}
 	return result
@@ -158,7 +161,7 @@ func (o *optionsContractData) SetUnusualActivityWithCallback(unusualActivity *Op
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, unusualActivity)
 		}()
 	}
 	return result
@@ -183,7 +186,7 @@ func (o *optionsContractData) SetTradeCandleStickWithCallback(tradeCandleStick *
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, tradeCandleStick)
 		}()
 	}
 	return result
@@ -219,7 +222,7 @@ func (o *optionsContractData) SetQuoteCandleStickWithCallback(quoteCandleStick *
 					// Log error here if logging is available
 				}
 			}()
-			callback(o, dataCache, securityData)
+			callback(o, dataCache, securityData, quoteCandleStick)
 		}()
 	}
 	return result
@@ -277,4 +280,58 @@ func (o *optionsContractData) GetAllSupplementaryData() map[string]*float64 {
 		result[k] = v
 	}
 	return result
-} 
+}
+
+// GetGreekData returns a greek datum
+func (o *optionsContractData) GetGreekData(key string) *Greek {
+	o.greekDataMutex.RLock()
+	defer o.greekDataMutex.RUnlock()
+	
+	if value, exists := o.greekData[key]; exists {
+		return value
+	}
+	return nil
+}
+
+// SetGreekData sets a greek datum
+func (o *optionsContractData) SetGreekData(key string, datum *Greek, update GreekDataUpdate) bool {
+	o.greekDataMutex.Lock()
+	defer o.greekDataMutex.Unlock()
+	
+	oldValue := o.greekData[key]
+	newValue := update(key, oldValue, datum)
+	
+	if newValue != oldValue {
+		o.greekData[key] = newValue
+		return true
+	}
+	return false
+}
+
+// SetGreekDataWithCallback sets a greek datum with callback
+func (o *optionsContractData) SetGreekDataWithCallback(key string, datum *Greek, callback OnOptionsContractGreekDataUpdated, securityData SecurityData, dataCache DataCache, update GreekDataUpdate) bool {
+	result := o.SetGreekData(key, datum, update)
+	if result && callback != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Log error here if logging is available
+				}
+			}()
+			callback(key, datum, o, securityData, dataCache)
+		}()
+	}
+	return result
+}
+
+// GetAllGreekData returns all greek data
+func (o *optionsContractData) GetAllGreekData() map[string]*Greek {
+	o.greekDataMutex.RLock()
+	defer o.greekDataMutex.RUnlock()
+	
+	result := make(map[string]*Greek)
+	for k, v := range o.greekData {
+		result[k] = v
+	}
+	return result
+}
