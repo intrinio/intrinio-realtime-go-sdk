@@ -137,7 +137,7 @@ func (s *securityData) SetEquitiesTradeWithCallback(trade *intrinio.EquityTrade,
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, trade)
 		}()
 	}
 	return result
@@ -173,7 +173,7 @@ func (s *securityData) SetEquitiesQuoteWithCallback(quote *intrinio.EquityQuote,
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, quote)
 		}()
 	}
 	return result
@@ -198,7 +198,7 @@ func (s *securityData) SetEquitiesTradeCandleStickWithCallback(tradeCandleStick 
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, tradeCandleStick)
 		}()
 	}
 	return result
@@ -234,17 +234,17 @@ func (s *securityData) SetEquitiesQuoteCandleStickWithCallback(quoteCandleStick 
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, quoteCandleStick)
 		}()
 	}
 	return result
 }
 
-// GetOptionsContractData returns options contract data for a contract
+// GetOptionsContractData returns the options contract data for a contract
 func (s *securityData) GetOptionsContractData(contract string) OptionsContractData {
 	s.contractsMutex.RLock()
 	defer s.contractsMutex.RUnlock()
-	
+
 	if contractData, exists := s.contracts[contract]; exists {
 		return contractData
 	}
@@ -623,4 +623,28 @@ func (s *securityData) SetOptionsContractSupplementalDatumWithCallback(contract,
 		return contractData.SetSupplementaryDatumWithCallback(key, datum, callback, s, dataCache, update)
 	}
 	return false
-} 
+}
+
+// GetOptionsContractGreekData returns greek datum for an options contract
+func (s *securityData) GetOptionsContractGreekData(contract, key string) *Greek {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.GetGreekData(key)
+	}
+	return nil
+}
+
+// SetOptionsContractGreekData sets greek datum for an options contract
+func (s *securityData) SetOptionsContractGreekData(contract, key string, data *Greek, update GreekDataUpdate) bool {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.SetGreekData(key, data, update)
+	}
+	return false
+}
+
+// SetOptionsContractGreekDataWithCallback sets greek datum for an options contract with callback
+func (s *securityData) SetOptionsContractGreekDataWithCallback(contract, key string, data *Greek, callback OnOptionsContractGreekDataUpdated, dataCache DataCache, update GreekDataUpdate) bool {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.SetGreekDataWithCallback(key, data, callback, s, dataCache, update)
+	}
+	return false
+}
