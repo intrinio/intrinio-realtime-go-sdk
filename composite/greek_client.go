@@ -357,7 +357,7 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 		contract := optionsContractData.GetContract()
 		tickerSymbol := securityData.GetTickerSymbol()
 
-		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, greek, g.updateFunc)
+		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, greek, g.updateGreekDataFunc)
 	}
 }
 
