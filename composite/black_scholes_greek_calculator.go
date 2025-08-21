@@ -2,8 +2,6 @@ package composite
 
 import (
 	"math"
-	"time"
-	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 // BlackScholesGreekCalculator provides static methods for calculating Black-Scholes Greeks
@@ -20,41 +18,33 @@ const (
 var root2Pi float64 = math.Sqrt(2.0 * math.Pi)
 
 // Calculate calculates the Black-Scholes Greeks for an options contract
-func (b *BlackScholesGreekCalculator) Calculate(riskFreeInterestRate, dividendYield float64,
-	underlyingTrade *intrinio.EquityTrade, latestOptionTrade *intrinio.OptionTrade, latestOptionQuote *intrinio.OptionQuote) Greek {
+func (b *BlackScholesGreekCalculator) Calculate(riskFreeInterestRate, dividendYield float64, underlyingPrice float64, marketPrice float64, strike float64, isPut bool, yearsToExpiration float64) Greek {
 
-	if latestOptionQuote.AskPrice <= 0.0 || latestOptionQuote.BidPrice <= 0.0 || 
-		riskFreeInterestRate <= 0.0 || underlyingTrade.Price <= 0.0 {
+	if marketPrice <= 0.0 || riskFreeInterestRate <= 0.0 || underlyingPrice <= 0.0 {
 		return NewGreek(0.0, 0.0, 0.0, 0.0, 0.0, false)
 	}
-	
-	yearsToExpiration := b.getYearsToExpiration(latestOptionTrade, latestOptionQuote)
-	underlyingPrice := float64(underlyingTrade.Price)
-	strike := float64(b.getStrikePrice(latestOptionTrade.ContractId))
-	isPut := b.isPut(latestOptionTrade.ContractId)
-	marketPrice := float64((latestOptionQuote.AskPrice + latestOptionQuote.BidPrice) / 2.0)
-	
+
 	if yearsToExpiration <= 0.0 || strike <= 0.0 {
 		return NewGreek(0.0, 0.0, 0.0, 0.0, 0.0, false)
 	}
-	
+
 	impliedVolatility := b.calcImpliedVolatility(isPut, underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, dividendYield, marketPrice)
 	if impliedVolatility == 0.0 {
 		return NewGreek(0.0, 0.0, 0.0, 0.0, 0.0, false)
 	}
-	
+
 	delta := b.calcDelta(isPut, underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, dividendYield, marketPrice, impliedVolatility)
 	gamma := b.calcGamma(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, dividendYield, marketPrice, impliedVolatility)
 	theta := b.calcTheta(isPut, underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, dividendYield, marketPrice, impliedVolatility)
 	vega := b.calcVega(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, dividendYield, marketPrice, impliedVolatility)
-	
+
 	return NewGreek(impliedVolatility, delta, gamma, theta, vega, true)
 }
 
 // calcImpliedVolatility calculates the implied volatility
 func (b *BlackScholesGreekCalculator) calcImpliedVolatility(isPut bool, underlyingPrice, strike float64, yearsToExpiration float64, riskFreeInterestRate, dividendYield, marketPrice float64) float64 {
 	tol := 1e-10
-	forward := underlyingPrice * math.Exp((riskFreeInterestRate - dividendYield) * yearsToExpiration)
+	forward := underlyingPrice * math.Exp((riskFreeInterestRate-dividendYield)*yearsToExpiration)
 	m := forward / strike
 	sigma := math.Sqrt(2.0 * math.Abs(math.Log(m)) / yearsToExpiration)
 	if math.IsNaN(sigma) || sigma <= 0.0 {
@@ -75,7 +65,7 @@ func (b *BlackScholesGreekCalculator) calcImpliedVolatility(isPut bool, underlyi
 		}
 
 		d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
-		vega := underlyingPrice * math.Exp(-dividendYield * yearsToExpiration) * math.Sqrt(yearsToExpiration) * b.normalPdf(d1)
+		vega := underlyingPrice * math.Exp(-dividendYield*yearsToExpiration) * math.Sqrt(yearsToExpiration) * b.normalPdf(d1)
 		if math.Abs(vega) < 1e-10 {
 			break
 		}
@@ -100,13 +90,13 @@ func (b *BlackScholesGreekCalculator) calcDelta(isPut bool, underlyingPrice, str
 // calcDeltaCall calculates delta for call options
 func (b *BlackScholesGreekCalculator) calcDeltaCall(underlyingPrice, strike float64, yearsToExpiration float64, riskFreeInterestRate, dividendYield, marketPrice, sigma float64) float64 {
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
-	return math.Exp(-dividendYield * yearsToExpiration) * b.cumulativeNormalDistribution(d1)
+	return math.Exp(-dividendYield*yearsToExpiration) * b.cumulativeNormalDistribution(d1)
 }
 
 // calcDeltaPut calculates delta for put options
 func (b *BlackScholesGreekCalculator) calcDeltaPut(underlyingPrice, strike float64, yearsToExpiration float64, riskFreeInterestRate, dividendYield, marketPrice, sigma float64) float64 {
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
-	return math.Exp(-dividendYield * yearsToExpiration) * (b.cumulativeNormalDistribution(d1) - 1.0)
+	return math.Exp(-dividendYield*yearsToExpiration) * (b.cumulativeNormalDistribution(d1) - 1.0)
 }
 
 // calcGamma calculates the gamma
@@ -128,9 +118,9 @@ func (b *BlackScholesGreekCalculator) calcThetaCall(underlyingPrice, strike floa
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 	d2 := b.d2(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 
-	term1 := math.Exp(-dividendYield * yearsToExpiration) * underlyingPrice * b.normalPdf(d1) * sigma / (2 * math.Sqrt(yearsToExpiration))
+	term1 := math.Exp(-dividendYield*yearsToExpiration) * underlyingPrice * b.normalPdf(d1) * sigma / (2 * math.Sqrt(yearsToExpiration))
 	term2 := riskFreeInterestRate * strike * math.Exp(-riskFreeInterestRate*yearsToExpiration) * b.cumulativeNormalDistribution(d2)
-	term3 := dividendYield * underlyingPrice * math.Exp(-dividendYield * yearsToExpiration) * b.cumulativeNormalDistribution(d1)
+	term3 := dividendYield * underlyingPrice * math.Exp(-dividendYield*yearsToExpiration) * b.cumulativeNormalDistribution(d1)
 
 	return (-term1 - term2 + term3) / 365.25
 }
@@ -140,9 +130,9 @@ func (b *BlackScholesGreekCalculator) calcThetaPut(underlyingPrice, strike float
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 	d2 := b.d2(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 
-	term1 := math.Exp(-dividendYield * yearsToExpiration) * underlyingPrice * b.normalPdf(d1) * sigma / (2 * math.Sqrt(yearsToExpiration))
-	term2 := riskFreeInterestRate * strike * math.Exp(-riskFreeInterestRate * yearsToExpiration) * b.cumulativeNormalDistribution(-d2)
-	term3 := dividendYield * underlyingPrice * math.Exp(-dividendYield * yearsToExpiration) * b.cumulativeNormalDistribution(-d1)
+	term1 := math.Exp(-dividendYield*yearsToExpiration) * underlyingPrice * b.normalPdf(d1) * sigma / (2 * math.Sqrt(yearsToExpiration))
+	term2 := riskFreeInterestRate * strike * math.Exp(-riskFreeInterestRate*yearsToExpiration) * b.cumulativeNormalDistribution(-d2)
+	term3 := dividendYield * underlyingPrice * math.Exp(-dividendYield*yearsToExpiration) * b.cumulativeNormalDistribution(-d1)
 
 	return (-term1 + term2 - term3) / 365.25
 }
@@ -177,7 +167,7 @@ func (b *BlackScholesGreekCalculator) cumulativeNormalDistribution(z float64) fl
 		sum := 0.0
 		term := absZ
 		i := 3.0
-		for sum + term != sum {
+		for sum+term != sum {
 			sum += term
 			term = term * absZ * absZ / i
 			i += 2.0
@@ -197,8 +187,8 @@ func (b *BlackScholesGreekCalculator) cumulativeNormalDistribution(z float64) fl
 		zz = -z
 	}
 
-	t := 1.0 / (1.0 + 0.2316419 * zz)
-	poly := t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+	t := 1.0 / (1.0 + 0.2316419*zz)
+	poly := t * (0.319381530 + t*(-0.356563782+t*(1.781477937+t*(-1.821255978+t*1.330274429))))
 
 	pdf := b.normalPdf(zz)
 	tail := pdf * poly
@@ -212,86 +202,28 @@ func (b *BlackScholesGreekCalculator) cumulativeNormalDistribution(z float64) fl
 
 // normalPdf calculates the normal probability density function
 func (b *BlackScholesGreekCalculator) normalPdf(x float64) float64 {
-	return math.Exp(-0.5 * x * x) / root2Pi
+	return math.Exp(-0.5*x*x) / root2Pi
 }
 
 // calcPriceCall calculates the Black-Scholes price for call options
 func (b *BlackScholesGreekCalculator) calcPriceCall(underlyingPrice, strike float64, yearsToExpiration float64, riskFreeInterestRate float64, sigma float64, dividendYield float64) float64 {
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 	d2 := b.d2(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
-	
+
 	discounted_underlying := math.Exp(-dividendYield*yearsToExpiration) * underlyingPrice
 	probability_weighted_value_of_being_exercised := discounted_underlying * b.cumulativeNormalDistribution(d1)
 
-	discounted_strike := math.Exp(-riskFreeInterestRate * yearsToExpiration) * strike 
+	discounted_strike := math.Exp(-riskFreeInterestRate*yearsToExpiration) * strike
 	probability_weighted_value_of_discounted_strike := discounted_strike * b.cumulativeNormalDistribution(d2)
 
-	return  probability_weighted_value_of_being_exercised - probability_weighted_value_of_discounted_strike
+	return probability_weighted_value_of_being_exercised - probability_weighted_value_of_discounted_strike
 }
 
 // calcPricePut calculates the Black-Scholes price for put options
 func (b *BlackScholesGreekCalculator) calcPricePut(underlyingPrice, strike float64, yearsToExpiration float64, riskFreeInterestRate float64, sigma float64, dividendYield float64) float64 {
 	d1 := b.d1(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
 	d2 := b.d2(underlyingPrice, strike, yearsToExpiration, riskFreeInterestRate, sigma, dividendYield)
-	
+
 	return strike*math.Exp(-riskFreeInterestRate*yearsToExpiration)*b.cumulativeNormalDistribution(-d2) -
 		underlyingPrice*math.Exp(-dividendYield*yearsToExpiration)*b.cumulativeNormalDistribution(-d1)
-}
-
-// getYearsToExpiration calculates the years to expiration
-func (b *BlackScholesGreekCalculator) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade, latestOptionQuote *intrinio.OptionQuote) float64 {
-	// Use the expiration date from the contract
-	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
-	now := time.Now()
-	
-	diff := expirationDate.Sub(now).Seconds()
-	if diff <= 0.0 {
-		return 0.0
-	}
-	return diff / 31557600.0
-}
-
-// getStrikePrice extracts the strike price from the contract identifier
-func (b *BlackScholesGreekCalculator) getStrikePrice(contract string) float64{
-	if len(contract) < 19 {
-		return 0.0
-	}
-	
-	// Extract strike price from contract (format: AAPL__201016C00100000)
-	strikeStr := contract[13:19]
-	
-	var whole uint32
-	for i := 0; i < 5; i++ {
-		whole += uint32(strikeStr[i]-'0') * uint32(math.Pow10(4-i))
-	}
-	
-	part := float64(strikeStr[5]-'0') * 0.1
-	
-	return float64(whole) + part
-}
-
-// isPut checks if the option is a put
-func (b *BlackScholesGreekCalculator) isPut(contract string) bool {
-	if len(contract) < 13 {
-		return false
-	}
-	return contract[12] == 'P'
-}
-
-// getExpirationDate extracts the expiration date from the contract identifier
-func (b *BlackScholesGreekCalculator) getExpirationDate(contract string) time.Time {
-	if len(contract) < 12 {
-		return time.Time{}
-	}
-	
-	// Extract date from contract (format: AAPL__201016C00100000)
-	dateStr := contract[6:12]
-	
-	// Parse date in format "yyMMdd"
-	expirationDate, err := time.Parse("060102", dateStr)
-	if err != nil {
-		return time.Time{}
-	}
-	
-	return expirationDate
 }
