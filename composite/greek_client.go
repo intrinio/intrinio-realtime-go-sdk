@@ -143,7 +143,12 @@ func (g *GreekClient) TryAddOrUpdateGreekCalculation(name string, calc Calculate
 
 // AddBlackScholes adds the Black-Scholes Greek calculation
 func (g *GreekClient) AddBlackScholes() {
-	g.TryAddOrUpdateGreekCalculation("BlackScholes", g.blackScholesCalc)
+	g.TryAddOrUpdateGreekCalculation(g.blackScholesKey, g.blackScholesCalc)
+}
+
+// AddBlackScholes adds the Black-Scholes Greek calculation
+func (g *GreekClient) AddBlackScholesOptionsEdge() {
+	g.TryAddOrUpdateGreekCalculation(g.blackScholesKey, g.blackScholesCalcOptionsEdge)
 }
 
 func (g *GreekClient) FetchRiskFreeInterestRate() {
@@ -427,7 +432,7 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 
 	strike := (g.getStrikePrice(latestTrade.ContractId))
 	isPut := g.isPut(latestTrade.ContractId)
-	yearsToExpiration := g.getYearsToExpiration(latestTrade)
+	yearsToExpiration := g.getYearsToExpirationTradeOnly(latestTrade)
 
 	// Calculate Greeks using Black-Scholes
 	calculator := &BlackScholesGreekCalculator{}
@@ -443,7 +448,7 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 }
 
 // getYearsToExpiration calculates the years to expiration
-func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade) float64 {
+func (b *GreekClient) getYearsToExpirationTradeOnly(latestOptionTrade *intrinio.OptionTrade) float64 {
 	// Use the expiration date from the contract
 	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
 	now := time.Now()
