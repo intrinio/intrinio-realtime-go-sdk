@@ -16,6 +16,7 @@ type dataCache struct {
 	supplementalDatumUpdatedCallback                    OnSupplementalDatumUpdated
 	securitySupplementalDatumUpdatedCallback            OnSecuritySupplementalDatumUpdated
 	optionsContractSupplementalDatumUpdatedCallback     OnOptionsContractSupplementalDatumUpdated
+	optionsContractGreekDataUpdatedCallback             OnOptionsContractGreekDataUpdated
 	
 	equitiesTradeUpdatedCallback                        OnEquitiesTradeUpdated
 	equitiesQuoteUpdatedCallback                        OnEquitiesQuoteUpdated
@@ -68,7 +69,7 @@ func (d *dataCache) SetSupplementaryDatum(key string, datum *float64, update Sup
 						// Log error here if logging is available
 					}
 				}()
-				d.supplementalDatumUpdatedCallback(key, datum, d)
+				d.supplementalDatumUpdatedCallback(key, newValue, d)
 			}()
 		}
 		return true
@@ -504,6 +505,10 @@ func (d *dataCache) SetSecuritySupplementalDatumUpdatedCallback(callback OnSecur
 
 func (d *dataCache) SetOptionsContractSupplementalDatumUpdatedCallback(callback OnOptionsContractSupplementalDatumUpdated) {
 	d.optionsContractSupplementalDatumUpdatedCallback = callback
+}
+
+func (d *dataCache) SetOptionsContractGreekDataUpdatedCallback(callback OnOptionsContractGreekDataUpdated) {
+	d.optionsContractGreekDataUpdatedCallback = callback
 }
 
 func (d *dataCache) SetEquitiesTradeUpdatedCallback(callback OnEquitiesTradeUpdated) {
