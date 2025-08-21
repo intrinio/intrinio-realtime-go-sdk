@@ -1,5 +1,9 @@
 package composite
 
+import (
+	"github.com/intrinio/intrinio-realtime-go-sdk"
+)
+
 // OnSupplementalDatumUpdated is called when supplemental data is updated
 type OnSupplementalDatumUpdated func(key string, datum *float64, dataCache DataCache)
 
