@@ -47,35 +47,35 @@ func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdat
 		selfCache:                   cache == nil,
 		apiKey:                      apiKey,
 	}
-	
+
 	// Set up callbacks based on update frequency
 	if greekUpdateFrequency.Has(EveryOptionsTradeUpdate) {
-		cache.SetOptionsTradeUpdatedCallback(client.updateGreeksForOptionsContract)
+		cache.SetOptionsTradeUpdatedCallback(client.updateGreeksForOptionsContractTrade)
 	}
-	
+
 	if greekUpdateFrequency.Has(EveryOptionsQuoteUpdate) {
-		cache.SetOptionsQuoteUpdatedCallback(client.updateGreeksForOptionsContract)
+		cache.SetOptionsQuoteUpdatedCallback(client.updateGreeksForOptionsContractQuote)
 	}
-	
+
 	if greekUpdateFrequency.Has(EveryDividendYieldUpdate) {
 		cache.SetSecuritySupplementalDatumUpdatedCallback(client.updateGreeksSecuritySupplementalDatumUpdated)
 	}
-	
+
 	if greekUpdateFrequency.Has(EveryRiskFreeInterestRateUpdate) {
 		cache.SetSupplementalDatumUpdatedCallback(client.updateGreeks)
 	}
-	
+
 	if greekUpdateFrequency.Has(EveryEquityTradeUpdate) {
-		cache.SetEquitiesTradeUpdatedCallback(client.updateGreeksForSecurity)
+		cache.SetEquitiesTradeUpdatedCallback(client.updateGreeksForSecurityTrade)
 	}
-	
+
 	if greekUpdateFrequency.Has(EveryEquityQuoteUpdate) {
-		cache.SetEquitiesQuoteUpdatedCallback(client.updateGreeksForSecurity)
+		cache.SetEquitiesQuoteUpdatedCallback(client.updateGreeksForSecurityQuote)
 	}
-	
+
 	// Set the Greek value updated callback
 	cache.SetOptionsContractSupplementalDatumUpdatedCallback(onGreekValueUpdated)
-	
+
 	return client
 }
 
@@ -135,7 +135,7 @@ func (g *GreekClient) OnUnusualActivity(unusualActivity *OptionsUnusualActivity)
 func (g *GreekClient) TryAddOrUpdateGreekCalculation(name string, calc CalculateNewGreek) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	g.calcLookup[name] = calc
 	return true
 }
@@ -148,14 +148,14 @@ func (g *GreekClient) AddBlackScholes() {
 func (g *GreekClient) FetchRiskFreeInterestRate() {
 	success := false
 	tryCount := 0
-	
+
 	log.Printf("Getting Risk Free Rate")
 
 	for success == false && tryCount < 10 {
-		tryCount++;
-		
+		tryCount++
+
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/economic/$DTB3/data_point/level?&api_key=%s", g.apiKey))
-		
+
 		if err != nil {
 			fmt.Printf("Unable to retrieve Risk Free Rate attempt %i", tryCount)
 		} else {
@@ -163,15 +163,15 @@ func (g *GreekClient) FetchRiskFreeInterestRate() {
 
 			body, err := io.ReadAll(resp.Body)
 
-			if (err == nil) {
+			if err == nil {
 				bodyString := string(body)
 				rate, err := strconv.ParseFloat(bodyString, 64)
 
-				if (err == nil) {
+				if err == nil {
 					adjRate := rate / 100
 
 					log.Printf("Setting Risk Free Rate to %v", adjRate)
-					
+
 					g.cache.SetSupplementaryDatum(g.riskFreeInterestRateKey, &adjRate, func(key string, oldValue, newValue *float64) *float64 {
 						return newValue
 					})
@@ -196,35 +196,35 @@ func (g *GreekClient) FetchMissingDividendYields() {
 	}
 }
 
-func (g *GreekClient) FetchDividendYieldForSecurity(security SecurityData) {	
-	if (security.GetSupplementaryDatum(g.dividendYieldKey) != nil) {
+func (g *GreekClient) FetchDividendYieldForSecurity(security SecurityData) {
+	if security.GetSupplementaryDatum(g.dividendYieldKey) != nil {
 		return
 	}
 
 	ticker := security.GetTickerSymbol()
-	
+
 	g.FetchDividendYieldForTicker(ticker)
 }
 
 func (g *GreekClient) FetchDividendYieldForTicker(ticker string) {
 	success := false
 	tryCount := 0
-	
-	for (tryCount < 3 && success == false) {
+
+	for tryCount < 3 && success == false {
 		tryCount++
 
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/securities/%s/data_point/trailing_dividend_yield?api_key=%s", ticker, g.apiKey))
 
-		if (err == nil) {
+		if err == nil {
 			defer resp.Body.Close()
 			body, err := io.ReadAll(resp.Body)
 
-			if (err == nil) {
+			if err == nil {
 				bodyString := string(body)
 				dividendYield, err := strconv.ParseFloat(bodyString, 64)
 
-				if (err == nil) {
-					g.cache.SetSecuritySupplementalDatum(ticker, g.dividendYieldKey, &dividendYield, g.updateFunc)
+				if err == nil {
+					g.cache.SetSecuritySupplementalDatum(ticker, g.dividendYieldKey, &dividendYield, g.updateSupplementalDatumFunc)
 					success = true
 					break
 				} else {
@@ -237,17 +237,16 @@ func (g *GreekClient) FetchDividendYieldForTicker(ticker string) {
 	}
 }
 
-
 // Company dividend yield can be grabbed in bulk
 func (g *GreekClient) fetchBulkCompanyDividendYield() {
 	success := false
 	tryCount := 0
 
 	for success == false && tryCount < 5 {
-		tryCount++;
-		
+		tryCount++
+
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/companies/daily_metrics?page_size=10000&api_key=%s", g.apiKey))
-		
+
 		if err != nil {
 			fmt.Printf("Unable to retrieve Dividend Yield attempt %i", tryCount)
 		} else {
@@ -255,21 +254,21 @@ func (g *GreekClient) fetchBulkCompanyDividendYield() {
 
 			body, err := io.ReadAll(resp.Body)
 
-			if (err == nil) {
+			if err == nil {
 				var companyMetricResponse DailyMetricResponse
 				err := json.Unmarshal(body, &companyMetricResponse) // don't forget to check the error
 
-				if (err == nil) {
+				if err == nil {
 					success = true
 
-					for  _, metric := range companyMetricResponse.DailyMetrics {
+					for _, metric := range companyMetricResponse.DailyMetrics {
 						yield, err := strconv.ParseFloat(metric.DividendYield, 64)
 
-						if (err == nil) {
+						if err == nil {
 							g.cache.SetSecuritySupplementalDatum(metric.Company.Ticker, g.dividendYieldKey, &yield, func(key string, oldValue, newValue *float64) *float64 {
 								return newValue
 							})
-							
+
 						} else {
 							// Unable to set dividend yield, proably null
 						}
@@ -285,21 +284,38 @@ func (g *GreekClient) fetchBulkCompanyDividendYield() {
 	}
 }
 
-
 // updateGreeks updates Greeks for all relevant data
 func (g *GreekClient) updateGreeks(key string, datum *float64, dataCache DataCache) {
 	// Update Greeks for all securities when risk-free rate changes
 	if key == g.riskFreeInterestRateKey {
 		allSecurities := dataCache.GetAllSecurityData()
-			for _, securityData := range allSecurities {
-				g.updateGreeksForSecurity(securityData, dataCache)
-			}
+		for _, securityData := range allSecurities {
+			g.updateGreeksForSecurity(securityData, dataCache)
+		}
 	}
-	
+
 }
 
 // updateGreeksForSecurity updates Greeks for a specific security
 func (g *GreekClient) updateGreeksForSecurity(securityData SecurityData, dataCache DataCache) {
+	// Get all options contracts for this security
+	allOptionsContracts := securityData.GetAllOptionsContractData()
+	for _, optionsContractData := range allOptionsContracts {
+		g.updateGreeksForOptionsContract(optionsContractData, dataCache, securityData)
+	}
+}
+
+// updateGreeksForSecurity updates Greeks for a specific security
+func (g *GreekClient) updateGreeksForSecurityTrade(securityData SecurityData, dataCache DataCache, trade *intrinio.EquityTrade) {
+	// Get all options contracts for this security
+	allOptionsContracts := securityData.GetAllOptionsContractData()
+	for _, optionsContractData := range allOptionsContracts {
+		g.updateGreeksForOptionsContract(optionsContractData, dataCache, securityData)
+	}
+}
+
+// updateGreeksForSecurity updates Greeks for a specific security
+func (g *GreekClient) updateGreeksForSecurityQuote(securityData SecurityData, dataCache DataCache, quote *intrinio.EquityQuote) {
 	// Get all options contracts for this security
 	allOptionsContracts := securityData.GetAllOptionsContractData()
 	for _, optionsContractData := range allOptionsContracts {
@@ -312,7 +328,29 @@ func (g *GreekClient) updateGreeksForOptionsContract(optionsContractData Options
 	// Execute all registered calculation functions
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	
+
+	for _, calc := range g.calcLookup {
+		calc(optionsContractData, securityData, dataCache)
+	}
+}
+
+// updateGreeksForOptionsContract updates Greeks for a specific options contract
+func (g *GreekClient) updateGreeksForOptionsContractTrade(optionsContractData OptionsContractData, dataCache DataCache, securityData SecurityData, trade *intrinio.OptionTrade) {
+	// Execute all registered calculation functions
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	for _, calc := range g.calcLookup {
+		calc(optionsContractData, securityData, dataCache)
+	}
+}
+
+// updateGreeksForOptionsContract updates Greeks for a specific options contract
+func (g *GreekClient) updateGreeksForOptionsContractQuote(optionsContractData OptionsContractData, dataCache DataCache, securityData SecurityData, quote *intrinio.OptionQuote) {
+	// Execute all registered calculation functions
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
 	for _, calc := range g.calcLookup {
 		calc(optionsContractData, securityData, dataCache)
 	}
@@ -357,7 +395,7 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 		contract := optionsContractData.GetContract()
 		tickerSymbol := securityData.GetTickerSymbol()
 
-		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, greek, g.updateGreekDataFunc)
+		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, &greek, g.updateGreekDataFunc)
 	}
 }
 
