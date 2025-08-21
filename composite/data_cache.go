@@ -145,6 +145,34 @@ func (d *dataCache) SetOptionSupplementalDatum(tickerSymbol, contract, key strin
 	return securityData.SetOptionsContractSupplementalDatumWithCallback(contract, key, datum, d.optionsContractSupplementalDatumUpdatedCallback, d, update)
 }
 
+// GetOptionsContractGreekData returns greek data for an options contract
+func (d *dataCache) GetOptionsContractGreekData(tickerSymbol, contract, key string) *Greek {
+	d.securitiesMutex.RLock()
+	defer d.securitiesMutex.RUnlock()
+
+	if securityData, exists := d.securities[tickerSymbol]; exists {
+		return securityData.GetOptionsContractGreekData(contract, key)
+	}
+	return nil
+}
+
+// SetOptionGreekData sets greek data for an options contract
+func (d *dataCache) SetOptionGreekData(tickerSymbol, contract, key string, data *Greek, update GreekDataUpdate) bool {
+	if tickerSymbol == "" || contract == "" {
+		return false
+	}
+
+	d.securitiesMutex.Lock()
+	securityData, exists := d.securities[tickerSymbol]
+	if !exists {
+		securityData = NewSecurityData(tickerSymbol)
+		d.securities[tickerSymbol] = securityData
+	}
+	d.securitiesMutex.Unlock()
+
+	return securityData.SetOptionsContractGreekDataWithCallback(contract, key, data, d.optionsContractGreekDataUpdatedCallback, d, update)
+}
+
 // GetSecurityData returns security data for a ticker symbol
 func (d *dataCache) GetSecurityData(tickerSymbol string) SecurityData {
 	d.securitiesMutex.RLock()
