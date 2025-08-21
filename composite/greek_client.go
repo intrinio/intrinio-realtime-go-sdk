@@ -404,6 +404,57 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 	}
 }
 
+// blackScholesCalc performs Black-Scholes Greek calculations
+func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsContractData, securityData SecurityData, dataCache DataCache) {
+	// Get required data
+	latestTrade := optionsContractData.GetLatestTrade()
+	underlyingTrade := securityData.GetLatestEquitiesTrade()
+
+	if latestTrade == nil || underlyingTrade == nil {
+		return
+	}
+
+	// Get market data
+	riskFreeRate := dataCache.GetSupplementaryDatum(g.riskFreeInterestRateKey)
+	dividendYield := securityData.GetSupplementaryDatum(g.dividendYieldKey)
+
+	if riskFreeRate == nil {
+		riskFreeRate = float64Ptr(0.0416) // Default
+	}
+	if dividendYield == nil {
+		dividendYield = float64Ptr(0.0) // Default 0%
+	}
+
+	strike := (g.getStrikePrice(latestTrade.ContractId))
+	isPut := g.isPut(latestTrade.ContractId)
+	yearsToExpiration := g.getYearsToExpiration(latestTrade)
+
+	// Calculate Greeks using Black-Scholes
+	calculator := &BlackScholesGreekCalculator{}
+	greek := calculator.Calculate(*riskFreeRate, *dividendYield, float64(underlyingTrade.Price), float64(latestTrade.Price), strike, isPut, yearsToExpiration)
+
+	if greek.IsValid {
+		// Store calculated Greeks
+		contract := optionsContractData.GetContract()
+		tickerSymbol := securityData.GetTickerSymbol()
+
+		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, &greek, g.updateGreekDataFunc)
+	}
+}
+
+// getYearsToExpiration calculates the years to expiration
+func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade) float64 {
+	// Use the expiration date from the contract
+	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
+	now := time.Now()
+
+	diff := expirationDate.Sub(now).Seconds()
+	if diff <= 0.0 {
+		return 0.0
+	}
+	return diff / 31557600.0
+}
+
 // getYearsToExpiration calculates the years to expiration
 func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade, latestOptionQuote *intrinio.OptionQuote) float64 {
 	// Use the expiration date from the contract
