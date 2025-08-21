@@ -1,35 +1,31 @@
 package composite
 
 import (
-	"sync"
-	"time"
-	"github.com/intrinio/intrinio-realtime-go-sdk"
-	"net/http"
 	"encoding/json"
 	"fmt"
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 	"io"
-	"strconv"
 	"log"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
 )
 
 // GreekClient calculates real-time Greeks from a stream of equities and options trades and quotes
 type GreekClient struct {
-	cache                           DataCache
-	blackScholesImpliedVolatilityKey string
-	blackScholesDeltaKey             string
-	blackScholesGammaKey             string
-	blackScholesThetaKey             string
-	blackScholesVegaKey              string
-	dividendYieldKey                 string
-	riskFreeInterestRateKey          string
-	blackScholesKey                  string
-	calcLookup                       map[string]CalculateNewGreek
-	updateFunc                       SupplementalDatumUpdate
-	seenTickers                      map[string]time.Time
-	dividendYieldWorking             bool
-	selfCache                        bool
-	mu                               sync.RWMutex
-	apiKey							 string
+	cache                       DataCache
+	dividendYieldKey            string
+	riskFreeInterestRateKey     string
+	blackScholesKey             string
+	calcLookup                  map[string]CalculateNewGreek
+	updateSupplementalDatumFunc SupplementalDatumUpdate
+	updateGreekDataFunc         GreekDataUpdate
+	seenTickers                 map[string]time.Time
+	dividendYieldWorking        bool
+	selfCache                   bool
+	mu                          sync.RWMutex
+	apiKey                      string
 }
 
 // NewGreekClient creates a new GreekClient instance
@@ -37,22 +33,19 @@ func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdat
 	if cache == nil {
 		cache = NewDataCache()
 	}
-	
+
 	client := &GreekClient{
-		cache:                           cache,
-		blackScholesImpliedVolatilityKey: "IntrinioBlackScholesImpliedVolatility",
-		blackScholesDeltaKey:             "IntrinioBlackScholesDelta",
-		blackScholesGammaKey:             "IntrinioBlackScholesGamma",
-		blackScholesThetaKey:             "IntrinioBlackScholesTheta",
-		blackScholesVegaKey:              "IntrinioBlackScholesVega",
-		dividendYieldKey:                 "DividendYield",
-		riskFreeInterestRateKey:          "RiskFreeInterestRate",
-		blackScholesKey:                  "IntrinioBlackScholes",
-		calcLookup:                       make(map[string]CalculateNewGreek),
-		seenTickers:                      make(map[string]time.Time),
-		updateFunc:                       func(key string, oldValue, newValue *float64) *float64 { return newValue },
-		selfCache:                        cache == nil,
-		apiKey:							  apiKey,
+		cache:                       cache,
+		dividendYieldKey:            "DividendYield",
+		riskFreeInterestRateKey:     "RiskFreeInterestRate",
+		blackScholesKey:             "IntrinioBlackScholes",
+		calcLookup:                  make(map[string]CalculateNewGreek),
+		updateSupplementalDatumFunc: func(key string, oldValue, newValue *float64) *float64 { return newValue },
+		updateGreekDataFunc:         func(key string, oldValue, newValue *Greek) *Greek { return newValue },
+		seenTickers:                 make(map[string]time.Time),
+		dividendYieldWorking:        false,
+		selfCache:                   cache == nil,
+		apiKey:                      apiKey,
 	}
 	
 	// Set up callbacks based on update frequency
@@ -339,42 +332,36 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 	latestTrade := optionsContractData.GetLatestTrade()
 	latestQuote := optionsContractData.GetLatestQuote()
 	underlyingTrade := securityData.GetLatestEquitiesTrade()
-	
+
 	if latestTrade == nil || latestQuote == nil || underlyingTrade == nil {
 		return
 	}
-	
+
 	// Get market data
 	riskFreeRate := dataCache.GetSupplementaryDatum(g.riskFreeInterestRateKey)
 	dividendYield := securityData.GetSupplementaryDatum(g.dividendYieldKey)
-	
+
 	if riskFreeRate == nil {
 		riskFreeRate = float64Ptr(0.0416) // Default
 	}
 	if dividendYield == nil {
 		dividendYield = float64Ptr(0.0) // Default 0%
 	}
-	
+
 	// Calculate Greeks using Black-Scholes
 	calculator := &BlackScholesGreekCalculator{}
 	greek := calculator.Calculate(*riskFreeRate, *dividendYield, underlyingTrade, latestTrade, latestQuote)
-	
+
 	if greek.IsValid {
 		// Store calculated Greeks
 		contract := optionsContractData.GetContract()
 		tickerSymbol := securityData.GetTickerSymbol()
-		
-		dataCache.SetOptionSupplementalDatum(tickerSymbol, contract, g.blackScholesImpliedVolatilityKey, float64Ptr(greek.ImpliedVolatility), g.updateFunc)
-		dataCache.SetOptionSupplementalDatum(tickerSymbol, contract, g.blackScholesDeltaKey, float64Ptr(greek.Delta), g.updateFunc)
-		dataCache.SetOptionSupplementalDatum(tickerSymbol, contract, g.blackScholesGammaKey, float64Ptr(greek.Gamma), g.updateFunc)
-		dataCache.SetOptionSupplementalDatum(tickerSymbol, contract, g.blackScholesThetaKey, float64Ptr(greek.Theta), g.updateFunc)
-		dataCache.SetOptionSupplementalDatum(tickerSymbol, contract, g.blackScholesVegaKey, float64Ptr(greek.Vega), g.updateFunc)
+
+		dataCache.SetOptionGreekData(tickerSymbol, contract, g.blackScholesKey, greek, g.updateFunc)
 	}
 }
-
-
 
 // Helper function to create float64 pointers
 func float64Ptr(v float64) *float64 {
 	return &v
-} 
+}
