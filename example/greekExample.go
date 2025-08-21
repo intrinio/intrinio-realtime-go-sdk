@@ -62,7 +62,7 @@ func (g *GreekSampleApp) OnEquitiesTrade(trade intrinio.EquityTrade) {
 }
 
 // OnGreek handles Greek calculation updates
-func (g *GreekSampleApp) OnGreek(key string, datum *float64, optionsContractData composite.OptionsContractData, securityData composite.SecurityData, dataCache composite.DataCache) {
+func (g *GreekSampleApp) OnGreek(key string, datum *composite.Greek, optionsContractData composite.OptionsContractData, securityData composite.SecurityData, dataCache composite.DataCache) {
 	atomic.AddUint64(&g.greekUpdatedEventCount, 1)
 
 	g.seenGreekTickersMutex.Lock()

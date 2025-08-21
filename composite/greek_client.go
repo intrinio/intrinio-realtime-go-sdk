@@ -30,7 +30,7 @@ type GreekClient struct {
 }
 
 // NewGreekClient creates a new GreekClient instance
-func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdated OnOptionsContractSupplementalDatumUpdated, apiKey string, cache DataCache) *GreekClient {
+func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdated OnOptionsContractGreekDataUpdated, apiKey string, cache DataCache) *GreekClient {
 	if cache == nil {
 		cache = NewDataCache()
 	}
@@ -75,7 +75,7 @@ func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdat
 	}
 
 	// Set the Greek value updated callback
-	cache.SetOptionsContractSupplementalDatumUpdatedCallback(onGreekValueUpdated)
+	cache.SetOptionsContractGreekDataUpdatedCallback(onGreekValueUpdated)
 
 	return client
 }
