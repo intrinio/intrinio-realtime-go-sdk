@@ -16,6 +16,7 @@ type dataCache struct {
 	supplementalDatumUpdatedCallback                    OnSupplementalDatumUpdated
 	securitySupplementalDatumUpdatedCallback            OnSecuritySupplementalDatumUpdated
 	optionsContractSupplementalDatumUpdatedCallback     OnOptionsContractSupplementalDatumUpdated
+	optionsContractGreekDataUpdatedCallback             OnOptionsContractGreekDataUpdated
 	
 	equitiesTradeUpdatedCallback                        OnEquitiesTradeUpdated
 	equitiesQuoteUpdatedCallback                        OnEquitiesQuoteUpdated
@@ -68,7 +69,7 @@ func (d *dataCache) SetSupplementaryDatum(key string, datum *float64, update Sup
 						// Log error here if logging is available
 					}
 				}()
-				d.supplementalDatumUpdatedCallback(key, datum, d)
+				d.supplementalDatumUpdatedCallback(key, newValue, d)
 			}()
 		}
 		return true
@@ -142,6 +143,34 @@ func (d *dataCache) SetOptionSupplementalDatum(tickerSymbol, contract, key strin
 	d.securitiesMutex.Unlock()
 	
 	return securityData.SetOptionsContractSupplementalDatumWithCallback(contract, key, datum, d.optionsContractSupplementalDatumUpdatedCallback, d, update)
+}
+
+// GetOptionsContractGreekData returns greek data for an options contract
+func (d *dataCache) GetOptionsContractGreekData(tickerSymbol, contract, key string) *Greek {
+	d.securitiesMutex.RLock()
+	defer d.securitiesMutex.RUnlock()
+
+	if securityData, exists := d.securities[tickerSymbol]; exists {
+		return securityData.GetOptionsContractGreekData(contract, key)
+	}
+	return nil
+}
+
+// SetOptionGreekData sets greek data for an options contract
+func (d *dataCache) SetOptionGreekData(tickerSymbol, contract, key string, data *Greek, update GreekDataUpdate) bool {
+	if tickerSymbol == "" || contract == "" {
+		return false
+	}
+
+	d.securitiesMutex.Lock()
+	securityData, exists := d.securities[tickerSymbol]
+	if !exists {
+		securityData = NewSecurityData(tickerSymbol)
+		d.securities[tickerSymbol] = securityData
+	}
+	d.securitiesMutex.Unlock()
+
+	return securityData.SetOptionsContractGreekDataWithCallback(contract, key, data, d.optionsContractGreekDataUpdatedCallback, d, update)
 }
 
 // GetSecurityData returns security data for a ticker symbol
@@ -504,6 +533,10 @@ func (d *dataCache) SetSecuritySupplementalDatumUpdatedCallback(callback OnSecur
 
 func (d *dataCache) SetOptionsContractSupplementalDatumUpdatedCallback(callback OnOptionsContractSupplementalDatumUpdated) {
 	d.optionsContractSupplementalDatumUpdatedCallback = callback
+}
+
+func (d *dataCache) SetOptionsContractGreekDataUpdatedCallback(callback OnOptionsContractGreekDataUpdated) {
+	d.optionsContractGreekDataUpdatedCallback = callback
 }
 
 func (d *dataCache) SetEquitiesTradeUpdatedCallback(callback OnEquitiesTradeUpdated) {

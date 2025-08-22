@@ -1,31 +1,31 @@
 package composite
 
 import (
-	"sync"
 	"github.com/intrinio/intrinio-realtime-go-sdk"
+	"sync"
 )
 
 // securityData implements the SecurityData interface
 type securityData struct {
-	tickerSymbol                    string
-	latestTrade                     *intrinio.EquityTrade
-	latestAskQuote                  *intrinio.EquityQuote
-	latestBidQuote                  *intrinio.EquityQuote
-	latestTradeCandleStick          *TradeCandleStick
-	latestAskQuoteCandleStick       *QuoteCandleStick
-	latestBidQuoteCandleStick       *QuoteCandleStick
-	contracts                       map[string]OptionsContractData
-	contractsMutex                  sync.RWMutex
-	supplementaryData               map[string]*float64
-	supplementaryDataMutex          sync.RWMutex
+	tickerSymbol              string
+	latestTrade               *intrinio.EquityTrade
+	latestAskQuote            *intrinio.EquityQuote
+	latestBidQuote            *intrinio.EquityQuote
+	latestTradeCandleStick    *TradeCandleStick
+	latestAskQuoteCandleStick *QuoteCandleStick
+	latestBidQuoteCandleStick *QuoteCandleStick
+	contracts                 map[string]OptionsContractData
+	contractsMutex            sync.RWMutex
+	supplementaryData         map[string]*float64
+	supplementaryDataMutex    sync.RWMutex
 }
 
 // NewSecurityData creates a new SecurityData instance
 func NewSecurityData(tickerSymbol string) SecurityData {
 	return &securityData{
-		tickerSymbol:          tickerSymbol,
-		contracts:             make(map[string]OptionsContractData),
-		supplementaryData:     make(map[string]*float64),
+		tickerSymbol:      tickerSymbol,
+		contracts:         make(map[string]OptionsContractData),
+		supplementaryData: make(map[string]*float64),
 	}
 }
 
@@ -68,7 +68,7 @@ func (s *securityData) GetLatestEquitiesBidQuoteCandleStick() *QuoteCandleStick 
 func (s *securityData) GetSupplementaryDatum(key string) *float64 {
 	s.supplementaryDataMutex.RLock()
 	defer s.supplementaryDataMutex.RUnlock()
-	
+
 	if value, exists := s.supplementaryData[key]; exists {
 		return value
 	}
@@ -79,10 +79,10 @@ func (s *securityData) GetSupplementaryDatum(key string) *float64 {
 func (s *securityData) SetSupplementaryDatum(key string, datum *float64, update SupplementalDatumUpdate) bool {
 	s.supplementaryDataMutex.Lock()
 	defer s.supplementaryDataMutex.Unlock()
-	
+
 	oldValue := s.supplementaryData[key]
 	newValue := update(key, oldValue, datum)
-	
+
 	if newValue != oldValue {
 		s.supplementaryData[key] = newValue
 		return true
@@ -110,7 +110,7 @@ func (s *securityData) SetSupplementaryDatumWithCallback(key string, datum *floa
 func (s *securityData) GetAllSupplementaryData() map[string]*float64 {
 	s.supplementaryDataMutex.RLock()
 	defer s.supplementaryDataMutex.RUnlock()
-	
+
 	result := make(map[string]*float64)
 	for k, v := range s.supplementaryData {
 		result[k] = v
@@ -137,7 +137,7 @@ func (s *securityData) SetEquitiesTradeWithCallback(trade *intrinio.EquityTrade,
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, trade)
 		}()
 	}
 	return result
@@ -148,7 +148,7 @@ func (s *securityData) SetEquitiesQuote(quote *intrinio.EquityQuote) bool {
 	if quote == nil {
 		return false
 	}
-	
+
 	if quote.Type == intrinio.ASK {
 		if s.latestAskQuote == nil || (quote.Timestamp > s.latestAskQuote.Timestamp) {
 			s.latestAskQuote = quote
@@ -173,7 +173,7 @@ func (s *securityData) SetEquitiesQuoteWithCallback(quote *intrinio.EquityQuote,
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, quote)
 		}()
 	}
 	return result
@@ -198,7 +198,7 @@ func (s *securityData) SetEquitiesTradeCandleStickWithCallback(tradeCandleStick 
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, tradeCandleStick)
 		}()
 	}
 	return result
@@ -209,7 +209,7 @@ func (s *securityData) SetEquitiesQuoteCandleStick(quoteCandleStick *QuoteCandle
 	if quoteCandleStick == nil {
 		return false
 	}
-	
+
 	if quoteCandleStick.Type == QuoteTypeAsk {
 		if s.latestAskQuoteCandleStick == nil || quoteCandleStick.Timestamp.After(s.latestAskQuoteCandleStick.Timestamp) {
 			s.latestAskQuoteCandleStick = quoteCandleStick
@@ -234,17 +234,17 @@ func (s *securityData) SetEquitiesQuoteCandleStickWithCallback(quoteCandleStick 
 					// Log error here if logging is available
 				}
 			}()
-			callback(s, dataCache)
+			callback(s, dataCache, quoteCandleStick)
 		}()
 	}
 	return result
 }
 
-// GetOptionsContractData returns options contract data for a contract
+// GetOptionsContractData returns the options contract data for a contract
 func (s *securityData) GetOptionsContractData(contract string) OptionsContractData {
 	s.contractsMutex.RLock()
 	defer s.contractsMutex.RUnlock()
-	
+
 	if contractData, exists := s.contracts[contract]; exists {
 		return contractData
 	}
@@ -255,7 +255,7 @@ func (s *securityData) GetOptionsContractData(contract string) OptionsContractDa
 func (s *securityData) GetAllOptionsContractData() map[string]OptionsContractData {
 	s.contractsMutex.RLock()
 	defer s.contractsMutex.RUnlock()
-	
+
 	result := make(map[string]OptionsContractData)
 	for k, v := range s.contracts {
 		result[k] = v
@@ -267,7 +267,7 @@ func (s *securityData) GetAllOptionsContractData() map[string]OptionsContractDat
 func (s *securityData) GetContractNames() []string {
 	s.contractsMutex.RLock()
 	defer s.contractsMutex.RUnlock()
-	
+
 	names := make([]string, 0, len(s.contracts))
 	for contract := range s.contracts {
 		names = append(names, contract)
@@ -288,7 +288,7 @@ func (s *securityData) SetOptionsContractTrade(trade *intrinio.OptionTrade) bool
 	if trade == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(trade.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(trade.ContractId)
@@ -296,7 +296,7 @@ func (s *securityData) SetOptionsContractTrade(trade *intrinio.OptionTrade) bool
 		s.contracts[trade.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetTrade(trade)
 }
 
@@ -305,7 +305,7 @@ func (s *securityData) SetOptionsContractTradeWithCallback(trade *intrinio.Optio
 	if trade == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(trade.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(trade.ContractId)
@@ -313,7 +313,7 @@ func (s *securityData) SetOptionsContractTradeWithCallback(trade *intrinio.Optio
 		s.contracts[trade.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetTradeWithCallback(trade, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -322,7 +322,7 @@ func (s *securityData) SetOptionsContractTradeWithCallback(trade *intrinio.Optio
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, trade)
 		}()
 	}
 	return result
@@ -341,7 +341,7 @@ func (s *securityData) SetOptionsContractQuote(quote *intrinio.OptionQuote) bool
 	if quote == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(quote.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(quote.ContractId)
@@ -349,7 +349,7 @@ func (s *securityData) SetOptionsContractQuote(quote *intrinio.OptionQuote) bool
 		s.contracts[quote.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetQuote(quote)
 }
 
@@ -358,7 +358,7 @@ func (s *securityData) SetOptionsContractQuoteWithCallback(quote *intrinio.Optio
 	if quote == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(quote.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(quote.ContractId)
@@ -366,7 +366,7 @@ func (s *securityData) SetOptionsContractQuoteWithCallback(quote *intrinio.Optio
 		s.contracts[quote.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetQuoteWithCallback(quote, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -375,7 +375,7 @@ func (s *securityData) SetOptionsContractQuoteWithCallback(quote *intrinio.Optio
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, quote)
 		}()
 	}
 	return result
@@ -394,7 +394,7 @@ func (s *securityData) SetOptionsContractRefresh(refresh *intrinio.OptionRefresh
 	if refresh == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(refresh.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(refresh.ContractId)
@@ -402,7 +402,7 @@ func (s *securityData) SetOptionsContractRefresh(refresh *intrinio.OptionRefresh
 		s.contracts[refresh.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetRefresh(refresh)
 }
 
@@ -411,7 +411,7 @@ func (s *securityData) SetOptionsContractRefreshWithCallback(refresh *intrinio.O
 	if refresh == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(refresh.ContractId)
 	if contractData == nil {
 		contractData = NewOptionsContractData(refresh.ContractId)
@@ -419,7 +419,7 @@ func (s *securityData) SetOptionsContractRefreshWithCallback(refresh *intrinio.O
 		s.contracts[refresh.ContractId] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetRefreshWithCallback(refresh, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -428,7 +428,7 @@ func (s *securityData) SetOptionsContractRefreshWithCallback(refresh *intrinio.O
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, refresh)
 		}()
 	}
 	return result
@@ -447,7 +447,7 @@ func (s *securityData) SetOptionsContractUnusualActivity(unusualActivity *Option
 	if unusualActivity == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(unusualActivity.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(unusualActivity.Contract)
@@ -455,7 +455,7 @@ func (s *securityData) SetOptionsContractUnusualActivity(unusualActivity *Option
 		s.contracts[unusualActivity.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetUnusualActivity(unusualActivity)
 }
 
@@ -464,7 +464,7 @@ func (s *securityData) SetOptionsContractUnusualActivityWithCallback(unusualActi
 	if unusualActivity == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(unusualActivity.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(unusualActivity.Contract)
@@ -472,7 +472,7 @@ func (s *securityData) SetOptionsContractUnusualActivityWithCallback(unusualActi
 		s.contracts[unusualActivity.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetUnusualActivityWithCallback(unusualActivity, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -481,7 +481,7 @@ func (s *securityData) SetOptionsContractUnusualActivityWithCallback(unusualActi
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, unusualActivity)
 		}()
 	}
 	return result
@@ -500,7 +500,7 @@ func (s *securityData) SetOptionsContractTradeCandleStick(tradeCandleStick *Opti
 	if tradeCandleStick == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(tradeCandleStick.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(tradeCandleStick.Contract)
@@ -508,7 +508,7 @@ func (s *securityData) SetOptionsContractTradeCandleStick(tradeCandleStick *Opti
 		s.contracts[tradeCandleStick.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetTradeCandleStick(tradeCandleStick)
 }
 
@@ -517,7 +517,7 @@ func (s *securityData) SetOptionsContractTradeCandleStickWithCallback(tradeCandl
 	if tradeCandleStick == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(tradeCandleStick.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(tradeCandleStick.Contract)
@@ -525,7 +525,7 @@ func (s *securityData) SetOptionsContractTradeCandleStickWithCallback(tradeCandl
 		s.contracts[tradeCandleStick.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetTradeCandleStickWithCallback(tradeCandleStick, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -534,7 +534,7 @@ func (s *securityData) SetOptionsContractTradeCandleStickWithCallback(tradeCandl
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, tradeCandleStick)
 		}()
 	}
 	return result
@@ -561,7 +561,7 @@ func (s *securityData) SetOptionsContractQuoteCandleStick(quoteCandleStick *Opti
 	if quoteCandleStick == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(quoteCandleStick.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(quoteCandleStick.Contract)
@@ -569,7 +569,7 @@ func (s *securityData) SetOptionsContractQuoteCandleStick(quoteCandleStick *Opti
 		s.contracts[quoteCandleStick.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	return contractData.SetQuoteCandleStick(quoteCandleStick)
 }
 
@@ -578,7 +578,7 @@ func (s *securityData) SetOptionsContractQuoteCandleStickWithCallback(quoteCandl
 	if quoteCandleStick == nil {
 		return false
 	}
-	
+
 	contractData := s.GetOptionsContractData(quoteCandleStick.Contract)
 	if contractData == nil {
 		contractData = NewOptionsContractData(quoteCandleStick.Contract)
@@ -586,7 +586,7 @@ func (s *securityData) SetOptionsContractQuoteCandleStickWithCallback(quoteCandl
 		s.contracts[quoteCandleStick.Contract] = contractData
 		s.contractsMutex.Unlock()
 	}
-	
+
 	result := contractData.SetQuoteCandleStickWithCallback(quoteCandleStick, callback, s, dataCache)
 	if result && callback != nil {
 		go func() {
@@ -595,7 +595,7 @@ func (s *securityData) SetOptionsContractQuoteCandleStickWithCallback(quoteCandl
 					// Log error here if logging is available
 				}
 			}()
-			callback(contractData, dataCache, s)
+			callback(contractData, dataCache, s, quoteCandleStick)
 		}()
 	}
 	return result
@@ -623,4 +623,28 @@ func (s *securityData) SetOptionsContractSupplementalDatumWithCallback(contract,
 		return contractData.SetSupplementaryDatumWithCallback(key, datum, callback, s, dataCache, update)
 	}
 	return false
-} 
+}
+
+// GetOptionsContractGreekData returns greek datum for an options contract
+func (s *securityData) GetOptionsContractGreekData(contract, key string) *Greek {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.GetGreekData(key)
+	}
+	return nil
+}
+
+// SetOptionsContractGreekData sets greek datum for an options contract
+func (s *securityData) SetOptionsContractGreekData(contract, key string, data *Greek, update GreekDataUpdate) bool {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.SetGreekData(key, data, update)
+	}
+	return false
+}
+
+// SetOptionsContractGreekDataWithCallback sets greek datum for an options contract with callback
+func (s *securityData) SetOptionsContractGreekDataWithCallback(contract, key string, data *Greek, callback OnOptionsContractGreekDataUpdated, dataCache DataCache, update GreekDataUpdate) bool {
+	if contractData := s.GetOptionsContractData(contract); contractData != nil {
+		return contractData.SetGreekDataWithCallback(key, data, callback, s, dataCache, update)
+	}
+	return false
+}

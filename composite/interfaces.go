@@ -75,6 +75,11 @@ type SecurityData interface {
 
 	SetOptionsContractSupplementalDatum(contract, key string, datum *float64, update SupplementalDatumUpdate) bool
 	SetOptionsContractSupplementalDatumWithCallback(contract, key string, datum *float64, callback OnOptionsContractSupplementalDatumUpdated, dataCache DataCache, update SupplementalDatumUpdate) bool
+	
+	GetOptionsContractGreekData(contract, key string) *Greek
+
+	SetOptionsContractGreekData(contract, key string, data *Greek, update GreekDataUpdate) bool
+	SetOptionsContractGreekDataWithCallback(contract, key string, data *Greek, callback OnOptionsContractGreekDataUpdated, dataCache DataCache, update GreekDataUpdate) bool
 }
 
 // OptionsContractData represents the interface for options contract data
@@ -106,6 +111,11 @@ type OptionsContractData interface {
 	SetSupplementaryDatum(key string, datum *float64, update SupplementalDatumUpdate) bool
 	SetSupplementaryDatumWithCallback(key string, datum *float64, callback OnOptionsContractSupplementalDatumUpdated, securityData SecurityData, dataCache DataCache, update SupplementalDatumUpdate) bool
 	GetAllSupplementaryData() map[string]*float64
+	
+	GetGreekData(key string) *Greek
+	SetGreekData(key string, datum *Greek, update GreekDataUpdate) bool
+	SetGreekDataWithCallback(key string, datum *Greek, callback OnOptionsContractGreekDataUpdated, securityData SecurityData, dataCache DataCache, update GreekDataUpdate) bool
+	GetAllGreekData() map[string]*Greek
 }
 
 // DataCache represents the interface for the data cache
@@ -120,6 +130,10 @@ type DataCache interface {
 	
 	GetOptionsContractSupplementalDatum(tickerSymbol, contract, key string) *float64
 	SetOptionSupplementalDatum(tickerSymbol, contract, key string, datum *float64, update SupplementalDatumUpdate) bool
+	
+	// Greek Data methods
+	GetOptionsContractGreekData(tickerSymbol, contract, key string) *Greek
+	SetOptionGreekData(tickerSymbol, contract, key string, data *Greek, update GreekDataUpdate) bool
 	
 	// Sub-caches
 	GetSecurityData(tickerSymbol string) SecurityData
@@ -179,4 +193,5 @@ type DataCache interface {
 	SetOptionsUnusualActivityUpdatedCallback(callback OnOptionsUnusualActivityUpdated)
 	SetOptionsTradeCandleStickUpdatedCallback(callback OnOptionsTradeCandleStickUpdated)
 	SetOptionsQuoteCandleStickUpdatedCallback(callback OnOptionsQuoteCandleStickUpdated)
-} 
+	SetOptionsContractGreekDataUpdatedCallback(callback OnOptionsContractGreekDataUpdated)
+}
