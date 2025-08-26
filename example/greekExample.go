@@ -105,20 +105,11 @@ func (g *GreekSampleApp) runGreekExample() error {
 	//symbols := []string{"AAPL", "MSFT", "SPY", "QQQ"}
 	symbols := []string{"JPM", "SPY", "QQQ", "AAPL", "NVDA"}
 
-	var equitiesConfig intrinio.Config = intrinio.LoadConfig("equities-config.json")
-	var equitiesClient *intrinio.Client = intrinio.NewEquitiesClient(equitiesConfig, g.OnEquitiesTrade, g.OnEquitiesQuote)
-
-	equitiesClient.Start()
-	equitiesClient.JoinMany(symbols)
-
-	var optionsConfig intrinio.Config = intrinio.LoadConfig("options-config.json")
-	var optionsClient *intrinio.Client = intrinio.NewOptionsClient(optionsConfig, g.OnOptionsTrade, g.OnOptionsQuote, nil, nil)
-
-	optionsClient.Start()
-	optionsClient.JoinMany(symbols)
-
 	// Create data cache
 	g.dataCache = composite.NewDataCache()
+
+	var equitiesConfig intrinio.Config = intrinio.LoadConfig("equities-config.json")
+	var optionsConfig intrinio.Config = intrinio.LoadConfig("options-config.json")
 
 	// Set up Greek update frequency
 	updateFrequency := composite.EveryDividendYieldUpdate |
@@ -157,6 +148,14 @@ func (g *GreekSampleApp) runGreekExample() error {
 			}
 		}
 	}()
+
+	var equitiesClient *intrinio.Client = intrinio.NewEquitiesClient(equitiesConfig, g.OnEquitiesTrade, g.OnEquitiesQuote)
+	equitiesClient.Start()
+	equitiesClient.JoinMany(symbols)
+
+	var optionsClient *intrinio.Client = intrinio.NewOptionsClient(optionsConfig, g.OnOptionsTrade, g.OnOptionsQuote, nil, nil)
+	optionsClient.Start()
+	optionsClient.JoinMany(symbols)
 
 	// Wait for interrupt signal
 	log.Println("Greek sample app running. Press Ctrl+C to stop.")
