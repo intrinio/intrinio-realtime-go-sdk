@@ -10,13 +10,14 @@ import (
 type Provider string
 
 const (
-	OPRA         Provider = "OPRA"
-	IEX          Provider = "IEX"
-	DELAYED_SIP  Provider = "DELAYED_SIP"
-	NASDAQ_BASIC Provider = "NASDAQ_BASIC"
-	CBOE_ONE     Provider = "CBOE_ONE"
-	MANUAL       Provider = "MANUAL"
-	OPTIONS_EDGE Provider = "OPTIONS_EDGE"
+	OPRA          Provider = "OPRA"
+	IEX           Provider = "IEX"
+	DELAYED_SIP   Provider = "DELAYED_SIP"
+	NASDAQ_BASIC  Provider = "NASDAQ_BASIC"
+	CBOE_ONE      Provider = "CBOE_ONE"
+	MANUAL        Provider = "MANUAL"
+	OPTIONS_EDGE  Provider = "OPTIONS_EDGE"
+	EQUITIES_EDGE Provider = "EQUITIES_EDGE"
 )
 
 type Config struct {
@@ -37,6 +38,8 @@ func (config Config) getAuthUrl() string {
 		return ("https://realtime-nasdaq-basic.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "CBOE_ONE" {
 		return ("https://cboe-one.intrinio.com/auth?api_key=" + config.ApiKey)
+	} else if config.Provider == "EQUITIES_EDGE" {
+		return ("https://equities-edge.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "IEX" {
 		return ("https://realtime-mx.intrinio.com/auth?api_key=" + config.ApiKey)
 	} else if config.Provider == "MANUAL" {
@@ -62,6 +65,8 @@ func (config Config) getWSUrl(token string) string {
 		return ("wss://realtime-nasdaq-basic.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "CBOE_ONE" {
 		return ("wss://cboe-one.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
+	} else if config.Provider == "EQUITIES_EDGE" {
+		return ("wss://equities-edge.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "IEX" {
 		return ("wss://realtime-mx.intrinio.com/socket/websocket?vsn=1.0.0&token=" + token + delayedPart)
 	} else if config.Provider == "MANUAL" {
@@ -99,6 +104,7 @@ func LoadConfig(filename string) Config {
 		(config.Provider != "IEX") &&
 		(config.Provider != "CBOE_ONE") &&
 		(config.Provider != "OPTIONS_EDGE") &&
+		(config.Provider != "EQUITIES_EDGE") &&
 		(config.Provider != "MANUAL") {
 		log.Fatal("Client - Config must specify a valid provider")
 	}
