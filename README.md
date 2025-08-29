@@ -115,6 +115,7 @@ Currently, Intrino offers realtime data for this SDK from the following provider
 * IEX
 * NASDAQ_BASIC
 * CBOE_ONE
+* EQUITIES_EDGE
 
 Please be sure that the correct provider is specified in the `intrinio.Config` object(s) that are passed to the `intrinio.NewEquitiesClient` or `intrinio.NewOptionsClient` routines. DELAYED_SIP, NASDAQ_BASIC, IEX, or CBOE_ONE should be specified for an equities client and OPRA should be specified for an options client.
 
