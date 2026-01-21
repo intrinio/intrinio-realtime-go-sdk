@@ -188,6 +188,59 @@ func (g *GreekClient) FetchRiskFreeInterestRate() {
 	}
 }
 
+func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
+	success := false
+	tryCount := 0
+
+	for success == false && tryCount < 10 {
+		tryCount++
+
+		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/%s/realtime?&api_key=%s", symbol, g.apiKey))
+
+		if err != nil {
+			fmt.Printf("Unable to retrieve Risk Free Rate attempt %i", tryCount)
+		} else {
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+
+			if err == nil {
+				// Parse JSON response
+				var indexResponse struct {
+					LastPrice string `json:"last_price"`
+				}
+				err := json.Unmarshal(body, &indexResponse)
+
+				if err != nil {
+					log.Printf("-------------ERROR----------")
+					log.Printf("Unable to parse json")
+					log.Printf("%v", err)
+					log.Printf("----------------------------")
+					continue
+				}
+
+				price, err := strconv.ParseFloat(indexResponse.LastPrice, 64)
+				price32 := float32(price)
+
+				for _, sym := range variants {
+
+					securityTrade := &intrinio.EquityTrade{
+						Symbol: sym,
+						Price:  price32,
+					}
+
+					if err == nil {
+						log.Printf("Setting Index Price to %v for %s", price32, sym)
+						g.cache.SetEquityTrade(securityTrade)
+						
+						success = true
+					}
+				}
+			}
+		}
+	}
+}
+
 func (g *GreekClient) FetchDividendYields() {
 	g.fetchBulkCompanyDividendYield()
 	g.FetchMissingDividendYields()
