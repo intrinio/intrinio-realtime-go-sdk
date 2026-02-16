@@ -161,7 +161,7 @@ type OptionTrade struct {
 func (trade OptionTrade) GetStrikePrice() float64 {
 	whole := uint32(trade.ContractId[13]-'0')*10000 + uint32(trade.ContractId[14]-'0')*1000 + uint32(trade.ContractId[15]-'0')*100 + uint32(trade.ContractId[16]-'0')*10 + uint32(trade.ContractId[17]-'0')
 	part := float64(trade.ContractId[18]-'0')*0.1 + float64(trade.ContractId[19]-'0')*0.01 + float64(trade.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+	return float64(whole) + part
 }
 
 func (trade OptionTrade) IsPut() bool {
@@ -204,17 +204,17 @@ func parseOptionTrade(bytes []byte) OptionTrade {
 
 type OptionQuote struct {
 	ContractId string
-	AskPrice   float32
-	BidPrice   float32
+	AskPrice   float64
+	BidPrice   float64
 	AskSize    uint32
 	BidSize    uint32
 	Timestamp  float64
 }
 
-func (quote OptionQuote) GetStrikePrice() float32 {
-	whole := uint16(quote.ContractId[13]-'0')*10000 + uint16(quote.ContractId[14]-'0')*1000 + uint16(quote.ContractId[15]-'0')*100 + uint16(quote.ContractId[16]-'0')*10 + uint16(quote.ContractId[17]-'0')
-	part := float32(quote.ContractId[18]-'0')*0.1 + float32(quote.ContractId[19]-'0')*0.01 + float32(quote.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (quote OptionQuote) GetStrikePrice() float64 {
+	whole := uint32(quote.ContractId[13]-'0')*10000 + uint32(quote.ContractId[14]-'0')*1000 + uint32(quote.ContractId[15]-'0')*100 + uint32(quote.ContractId[16]-'0')*10 + uint32(quote.ContractId[17]-'0')
+	part := float64(quote.ContractId[18]-'0')*0.1 + float64(quote.ContractId[19]-'0')*0.01 + float64(quote.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (quote OptionQuote) IsPut() bool {
@@ -254,16 +254,16 @@ func parseOptionQuote(bytes []byte) OptionQuote {
 type OptionRefresh struct {
 	ContractId   string
 	OpenInterest uint32
-	OpenPrice    float32
-	ClosePrice   float32
-	HighPrice    float32
-	LowPrice     float32
+	OpenPrice    float64
+	ClosePrice   float64
+	HighPrice    float64
+	LowPrice     float64
 }
 
-func (refresh OptionRefresh) GetStrikePrice() float32 {
-	whole := uint16(refresh.ContractId[13]-'0')*10000 + uint16(refresh.ContractId[14]-'0')*1000 + uint16(refresh.ContractId[15]-'0')*100 + uint16(refresh.ContractId[16]-'0')*10 + uint16(refresh.ContractId[17]-'0')
-	part := float32(refresh.ContractId[18]-'0')*0.1 + float32(refresh.ContractId[19]-'0')*0.01 + float32(refresh.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (refresh OptionRefresh) GetStrikePrice() float64 {
+	whole := uint32(refresh.ContractId[13]-'0')*10000 + uint32(refresh.ContractId[14]-'0')*1000 + uint32(refresh.ContractId[15]-'0')*100 + uint32(refresh.ContractId[16]-'0')*10 + uint32(refresh.ContractId[17]-'0')
+	part := float64(refresh.ContractId[18]-'0')*0.1 + float64(refresh.ContractId[19]-'0')*0.01 + float64(refresh.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (refresh OptionRefresh) IsPut() bool {
@@ -321,19 +321,19 @@ type OptionUnusualActivity struct {
 	ContractId                 string
 	Type                       UAType
 	Sentiment                  UASentiment
-	TotalValue                 float32
+	TotalValue                 float64
 	TotalSize                  uint32
-	AveragePrice               float32
-	AskPriceAtExecution        float32
-	BidPriceAtExecution        float32
-	UnderlyingPriceAtExecution float32
+	AveragePrice               float64
+	AskPriceAtExecution        float64
+	BidPriceAtExecution        float64
+	UnderlyingPriceAtExecution float64
 	Timestamp                  float64
 }
 
-func (ua OptionUnusualActivity) GetStrikePrice() float32 {
-	whole := uint16(ua.ContractId[13]-'0')*10000 + uint16(ua.ContractId[14]-'0')*1000 + uint16(ua.ContractId[15]-'0')*100 + uint16(ua.ContractId[16]-'0')*10 + uint16(ua.ContractId[17]-'0')
-	part := float32(ua.ContractId[18]-'0')*0.1 + float32(ua.ContractId[19]-'0')*0.01 + float32(ua.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (ua OptionUnusualActivity) GetStrikePrice() float64 {
+	whole := uint32(ua.ContractId[13]-'0')*10000 + uint32(ua.ContractId[14]-'0')*1000 + uint32(ua.ContractId[15]-'0')*100 + uint32(ua.ContractId[16]-'0')*10 + uint32(ua.ContractId[17]-'0')
+	part := float64(ua.ContractId[18]-'0')*0.1 + float64(ua.ContractId[19]-'0')*0.01 + float64(ua.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (ua OptionUnusualActivity) IsPut() bool {
