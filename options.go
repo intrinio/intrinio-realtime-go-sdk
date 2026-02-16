@@ -81,12 +81,12 @@ const (
 
 var priceTypeDivisorTable [16]float64 = [16]float64{1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0, 100000000.0, 1000000000.0, 512.0, 0.0, 0.0, 0.0, 0.0, math.NaN()}
 
-func extractUInt64Price(priceBytes []byte, priceType uint8) float32 {
-	return float32(float64(binary.LittleEndian.Uint64(priceBytes)) / priceTypeDivisorTable[priceType])
+func extractUInt64Price(priceBytes []byte, priceType uint8) float64 {
+	return float64(binary.LittleEndian.Uint64(priceBytes)) / priceTypeDivisorTable[priceType]
 }
 
-func extractUInt32Price(priceBytes []byte, priceType uint8) float32 {
-	return float32(float64(binary.LittleEndian.Uint32(priceBytes)) / priceTypeDivisorTable[priceType])
+func extractUInt32Price(priceBytes []byte, priceType uint8) float64 {
+	return float64(binary.LittleEndian.Uint32(priceBytes)) / priceTypeDivisorTable[priceType]
 }
 
 func scaleTimestamp(timestamp uint64) float64 {
@@ -148,19 +148,19 @@ var newYork, loadLocationErr = time.LoadLocation("America/New_York")
 type OptionTrade struct {
 	ContractId                 string
 	Exchange                   Exchange
-	Price                      float32
+	Price                      float64
 	Size                       uint32
 	Qualifiers                 [4]byte
 	TotalVolume                uint64
-	AskPriceAtExecution        float32
-	BidPriceAtExecution        float32
-	UnderlyingPriceAtExecution float32
+	AskPriceAtExecution        float64
+	BidPriceAtExecution        float64
+	UnderlyingPriceAtExecution float64
 	Timestamp                  float64
 }
 
-func (trade OptionTrade) GetStrikePrice() float32 {
-	whole := uint16(trade.ContractId[13]-'0')*10000 + uint16(trade.ContractId[14]-'0')*1000 + uint16(trade.ContractId[15]-'0')*100 + uint16(trade.ContractId[16]-'0')*10 + uint16(trade.ContractId[17]-'0')
-	part := float32(trade.ContractId[18]-'0')*0.1 + float32(trade.ContractId[19]-'0')*0.01 + float32(trade.ContractId[20]-'0')*0.001
+func (trade OptionTrade) GetStrikePrice() float64 {
+	whole := uint32(trade.ContractId[13]-'0')*10000 + uint32(trade.ContractId[14]-'0')*1000 + uint32(trade.ContractId[15]-'0')*100 + uint32(trade.ContractId[16]-'0')*10 + uint32(trade.ContractId[17]-'0')
+	part := float64(trade.ContractId[18]-'0')*0.1 + float64(trade.ContractId[19]-'0')*0.01 + float64(trade.ContractId[20]-'0')*0.001
 	return (float32(whole) + part)
 }
 
