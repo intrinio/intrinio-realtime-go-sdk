@@ -164,7 +164,7 @@ func (g *GreekClient) FetchRiskFreeInterestRate() {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/economic/$DTB3/data_point/level?&api_key=%s", g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Risk Free Rate attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Risk Free Rate attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -199,7 +199,7 @@ func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/%s/realtime?&api_key=%s", symbol, g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Risk Free Rate attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Risk Free Rate attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -307,7 +307,7 @@ func (g *GreekClient) fetchBulkCompanyDividendYield() {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/companies/daily_metrics?page_size=10000&api_key=%s", g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Dividend Yield attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Dividend Yield attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -527,6 +527,7 @@ func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTra
 }
 
 // getExpirationDate extracts the expiration date from the contract identifier
+// Returns expiration at market close (4:00 PM Eastern Time)
 func (b *GreekClient) getExpirationDate(contract string) time.Time {
 	if len(contract) < 12 {
 		return time.Time{}
@@ -541,7 +542,13 @@ func (b *GreekClient) getExpirationDate(contract string) time.Time {
 		return time.Time{}
 	}
 
-	return expirationDate
+	// Options expire at market close: 4:00 PM Eastern Time (16:00 ET = 21:00 UTC)
+	eastern, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		// Fallback: 21:00 UTC (4PM ET during EST)
+		return time.Date(expirationDate.Year(), expirationDate.Month(), expirationDate.Day(), 21, 0, 0, 0, time.UTC)
+	}
+	return time.Date(expirationDate.Year(), expirationDate.Month(), expirationDate.Day(), 16, 0, 0, 0, eastern)
 }
 
 // isPut checks if the option is a put
@@ -554,21 +561,25 @@ func (b *GreekClient) isPut(contract string) bool {
 
 // getStrikePrice extracts the strike price from the contract identifier
 func (b *GreekClient) getStrikePrice(contract string) float64 {
-	if len(contract) < 19 {
+	if len(contract) < 21 {
 		return 0.0
 	}
 
-	// Extract strike price from contract (format: AAPL__201016C00100000)
-	strikeStr := contract[13:19]
+	// Extract strike price from contract (OCC format: AAPL__201016C00100000)
+	// Positions 13-20 are 8 digits: 5 whole dollars + 3 decimal (thousandths)
+	strikeStr := contract[13:21]
 
 	var whole uint32
 	for i := 0; i < 5; i++ {
 		whole += uint32(strikeStr[i]-'0') * uint32(math.Pow10(4-i))
 	}
 
-	part := float64(strikeStr[5]-'0') * 0.1
+	var frac uint32
+	for i := 0; i < 3; i++ {
+		frac += uint32(strikeStr[5+i]-'0') * uint32(math.Pow10(2-i))
+	}
 
-	return float64(whole) + part
+	return float64(whole) + float64(frac)/1000.0
 }
 
 // Helper function to create float64 pointers
