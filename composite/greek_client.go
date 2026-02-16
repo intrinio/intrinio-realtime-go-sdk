@@ -3,7 +3,6 @@ package composite
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/intrinio/intrinio-realtime-go-sdk"
 	"io"
 	"log"
 	"math"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 // GreekClient calculates real-time Greeks from a stream of equities and options trades and quotes
@@ -220,19 +221,18 @@ func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
 				}
 
 				price, err := strconv.ParseFloat(indexResponse.LastPrice, 64)
-				price32 := float32(price)
 
 				for _, sym := range variants {
 
 					securityTrade := &intrinio.EquityTrade{
 						Symbol: sym,
-						Price:  price32,
+						Price:  price,
 					}
 
 					if err == nil {
-						log.Printf("Setting Index Price to %v for %s", price32, sym)
+						//log.Printf("Setting Index Price to %v for %s", price, sym)
 						g.cache.SetEquityTrade(securityTrade)
-						
+
 						success = true
 					}
 				}
