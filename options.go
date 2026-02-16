@@ -176,11 +176,13 @@ func (trade OptionTrade) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, trade.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, trade.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", trade.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (trade OptionTrade) GetUnderlyingSymbol() string {
@@ -229,11 +231,13 @@ func (quote OptionQuote) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, quote.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, quote.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", quote.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (quote OptionQuote) GetUnderlyingSymbol() string {
@@ -278,11 +282,13 @@ func (refresh OptionRefresh) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, refresh.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, refresh.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", refresh.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (refresh OptionRefresh) GetUnderlyingSymbol() string {
@@ -348,11 +354,13 @@ func (ua OptionUnusualActivity) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, ua.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, ua.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", ua.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (ua OptionUnusualActivity) GetUnderlyingSymbol() string {

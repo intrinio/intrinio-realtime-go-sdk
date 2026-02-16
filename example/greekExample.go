@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/intrinio/intrinio-realtime-go-sdk"
-	"github.com/intrinio/intrinio-realtime-go-sdk/composite"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/intrinio/intrinio-realtime-go-sdk"
+	"github.com/intrinio/intrinio-realtime-go-sdk/composite"
 )
 
 // GreekSampleApp demonstrates real-time Greek calculations
@@ -75,7 +76,7 @@ func (g *GreekSampleApp) OnGreek(key string, datum *composite.Greek, optionsCont
 }
 
 func (g *GreekSampleApp) dataUpdateWorkerCallback() {
-    g.greekClient.SetIndexPrice("SPX", []string{"SPX", "SPXW"})
+	g.greekClient.SetIndexPrice("SPX", []string{"SPX", "SPXW"})
 	g.greekClient.SetIndexPrice("VIX", []string{"VIX", "VIXW"})
 }
 
@@ -170,8 +171,6 @@ func (g *GreekSampleApp) runGreekExample() error {
 			}
 		}
 	}()
-
-	
 
 	var equitiesClient *intrinio.Client = intrinio.NewEquitiesClient(equitiesConfig, g.OnEquitiesTrade, g.OnEquitiesQuote)
 	equitiesClient.Start()

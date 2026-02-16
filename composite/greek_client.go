@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -199,7 +198,7 @@ func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/%s/realtime?&api_key=%s", symbol, g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Risk Free Rate attempt %d", tryCount)
+			fmt.Printf("Unable to retrieve Index price. Attempt %i", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -445,8 +444,8 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 		dividendYield = float64Ptr(0.0) // Default 0%
 	}
 
-	strike := (g.getStrikePrice(latestQuote.ContractId))
-	isPut := g.isPut(latestQuote.ContractId)
+	strike := latestQuote.GetStrikePrice()
+	isPut := latestQuote.IsPut()
 	yearsToExpiration := g.getYearsToExpiration(latestTrade, latestQuote)
 
 	// Calculate Greeks using Black-Scholes
@@ -483,9 +482,9 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 		dividendYield = float64Ptr(0.0) // Default 0%
 	}
 
-	strike := (g.getStrikePrice(latestTrade.ContractId))
-	isPut := g.isPut(latestTrade.ContractId)
-	yearsToExpiration := g.getYearsToExpirationTradeOnly(latestTrade)
+	strike := latestTrade.GetStrikePrice()
+	isPut := latestTrade.IsPut()
+	yearsToExpiration := g.getYearsToExpiration(latestTrade, nil)
 
 	// Calculate Greeks using Black-Scholes
 	calculator := &BlackScholesGreekCalculator{}
@@ -501,85 +500,32 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 }
 
 // getYearsToExpiration calculates the years to expiration
-func (b *GreekClient) getYearsToExpirationTradeOnly(latestOptionTrade *intrinio.OptionTrade) float64 {
-	// Use the expiration date from the contract
-	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
-	now := time.Now()
-
-	diff := expirationDate.Sub(now).Seconds()
-	if diff <= 0.0 {
-		return 0.0
-	}
-	return diff / 31557600.0
-}
-
-// getYearsToExpiration calculates the years to expiration
 func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade, latestOptionQuote *intrinio.OptionQuote) float64 {
 	// Use the expiration date from the contract
-	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
-	now := time.Now()
+	expirationDate := latestOptionTrade.GetExpirationDate()
 
-	diff := expirationDate.Sub(now).Seconds()
+	var latestEventTime float64
+
+	if latestOptionTrade != nil {
+		latestEventTime = latestOptionTrade.Timestamp
+	}
+
+	if latestOptionQuote != nil && latestOptionQuote.Timestamp > latestEventTime {
+		latestEventTime = latestOptionQuote.Timestamp
+	}
+
+	var eventTime time.Time
+	if latestEventTime != 0 {
+		sec := int64(latestEventTime)
+		nsec := int64((latestEventTime - float64(sec)) * 1e9)
+		eventTime = time.Unix(sec, nsec)
+	}
+
+	diff := expirationDate.Sub(eventTime).Seconds()
 	if diff <= 0.0 {
 		return 0.0
 	}
 	return diff / 31557600.0
-}
-
-// getExpirationDate extracts the expiration date from the contract identifier
-// Returns expiration at market close (4:00 PM Eastern Time)
-func (b *GreekClient) getExpirationDate(contract string) time.Time {
-	if len(contract) < 12 {
-		return time.Time{}
-	}
-
-	// Extract date from contract (format: AAPL__201016C00100000)
-	dateStr := contract[6:12]
-
-	// Parse date in format "yyMMdd"
-	expirationDate, err := time.Parse("060102", dateStr)
-	if err != nil {
-		return time.Time{}
-	}
-
-	// Options expire at market close: 4:00 PM Eastern Time (16:00 ET = 21:00 UTC)
-	eastern, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		// Fallback: 21:00 UTC (4PM ET during EST)
-		return time.Date(expirationDate.Year(), expirationDate.Month(), expirationDate.Day(), 21, 0, 0, 0, time.UTC)
-	}
-	return time.Date(expirationDate.Year(), expirationDate.Month(), expirationDate.Day(), 16, 0, 0, 0, eastern)
-}
-
-// isPut checks if the option is a put
-func (b *GreekClient) isPut(contract string) bool {
-	if len(contract) < 13 {
-		return false
-	}
-	return contract[12] == 'P'
-}
-
-// getStrikePrice extracts the strike price from the contract identifier
-func (b *GreekClient) getStrikePrice(contract string) float64 {
-	if len(contract) < 21 {
-		return 0.0
-	}
-
-	// Extract strike price from contract (OCC format: AAPL__201016C00100000)
-	// Positions 13-20 are 8 digits: 5 whole dollars + 3 decimal (thousandths)
-	strikeStr := contract[13:21]
-
-	var whole uint32
-	for i := 0; i < 5; i++ {
-		whole += uint32(strikeStr[i]-'0') * uint32(math.Pow10(4-i))
-	}
-
-	var frac uint32
-	for i := 0; i < 3; i++ {
-		frac += uint32(strikeStr[5+i]-'0') * uint32(math.Pow10(2-i))
-	}
-
-	return float64(whole) + float64(frac)/1000.0
 }
 
 // Helper function to create float64 pointers
