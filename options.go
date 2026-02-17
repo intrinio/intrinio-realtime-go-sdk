@@ -81,12 +81,12 @@ const (
 
 var priceTypeDivisorTable [16]float64 = [16]float64{1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0, 100000000.0, 1000000000.0, 512.0, 0.0, 0.0, 0.0, 0.0, math.NaN()}
 
-func extractUInt64Price(priceBytes []byte, priceType uint8) float32 {
-	return float32(float64(binary.LittleEndian.Uint64(priceBytes)) / priceTypeDivisorTable[priceType])
+func extractUInt64Price(priceBytes []byte, priceType uint8) float64 {
+	return float64(binary.LittleEndian.Uint64(priceBytes)) / priceTypeDivisorTable[priceType]
 }
 
-func extractUInt32Price(priceBytes []byte, priceType uint8) float32 {
-	return float32(float64(binary.LittleEndian.Uint32(priceBytes)) / priceTypeDivisorTable[priceType])
+func extractUInt32Price(priceBytes []byte, priceType uint8) float64 {
+	return float64(binary.LittleEndian.Uint32(priceBytes)) / priceTypeDivisorTable[priceType]
 }
 
 func scaleTimestamp(timestamp uint64) float64 {
@@ -148,20 +148,20 @@ var newYork, loadLocationErr = time.LoadLocation("America/New_York")
 type OptionTrade struct {
 	ContractId                 string
 	Exchange                   Exchange
-	Price                      float32
+	Price                      float64
 	Size                       uint32
 	Qualifiers                 [4]byte
 	TotalVolume                uint64
-	AskPriceAtExecution        float32
-	BidPriceAtExecution        float32
-	UnderlyingPriceAtExecution float32
+	AskPriceAtExecution        float64
+	BidPriceAtExecution        float64
+	UnderlyingPriceAtExecution float64
 	Timestamp                  float64
 }
 
-func (trade OptionTrade) GetStrikePrice() float32 {
-	whole := uint16(trade.ContractId[13]-'0')*10000 + uint16(trade.ContractId[14]-'0')*1000 + uint16(trade.ContractId[15]-'0')*100 + uint16(trade.ContractId[16]-'0')*10 + uint16(trade.ContractId[17]-'0')
-	part := float32(trade.ContractId[18]-'0')*0.1 + float32(trade.ContractId[19]-'0')*0.01 + float32(trade.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (trade OptionTrade) GetStrikePrice() float64 {
+	whole := uint32(trade.ContractId[13]-'0')*10000 + uint32(trade.ContractId[14]-'0')*1000 + uint32(trade.ContractId[15]-'0')*100 + uint32(trade.ContractId[16]-'0')*10 + uint32(trade.ContractId[17]-'0')
+	part := float64(trade.ContractId[18]-'0')*0.1 + float64(trade.ContractId[19]-'0')*0.01 + float64(trade.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (trade OptionTrade) IsPut() bool {
@@ -176,11 +176,13 @@ func (trade OptionTrade) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, trade.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, trade.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", trade.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (trade OptionTrade) GetUnderlyingSymbol() string {
@@ -204,17 +206,17 @@ func parseOptionTrade(bytes []byte) OptionTrade {
 
 type OptionQuote struct {
 	ContractId string
-	AskPrice   float32
-	BidPrice   float32
+	AskPrice   float64
+	BidPrice   float64
 	AskSize    uint32
 	BidSize    uint32
 	Timestamp  float64
 }
 
-func (quote OptionQuote) GetStrikePrice() float32 {
-	whole := uint16(quote.ContractId[13]-'0')*10000 + uint16(quote.ContractId[14]-'0')*1000 + uint16(quote.ContractId[15]-'0')*100 + uint16(quote.ContractId[16]-'0')*10 + uint16(quote.ContractId[17]-'0')
-	part := float32(quote.ContractId[18]-'0')*0.1 + float32(quote.ContractId[19]-'0')*0.01 + float32(quote.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (quote OptionQuote) GetStrikePrice() float64 {
+	whole := uint32(quote.ContractId[13]-'0')*10000 + uint32(quote.ContractId[14]-'0')*1000 + uint32(quote.ContractId[15]-'0')*100 + uint32(quote.ContractId[16]-'0')*10 + uint32(quote.ContractId[17]-'0')
+	part := float64(quote.ContractId[18]-'0')*0.1 + float64(quote.ContractId[19]-'0')*0.01 + float64(quote.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (quote OptionQuote) IsPut() bool {
@@ -229,11 +231,13 @@ func (quote OptionQuote) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, quote.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, quote.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", quote.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (quote OptionQuote) GetUnderlyingSymbol() string {
@@ -254,16 +258,16 @@ func parseOptionQuote(bytes []byte) OptionQuote {
 type OptionRefresh struct {
 	ContractId   string
 	OpenInterest uint32
-	OpenPrice    float32
-	ClosePrice   float32
-	HighPrice    float32
-	LowPrice     float32
+	OpenPrice    float64
+	ClosePrice   float64
+	HighPrice    float64
+	LowPrice     float64
 }
 
-func (refresh OptionRefresh) GetStrikePrice() float32 {
-	whole := uint16(refresh.ContractId[13]-'0')*10000 + uint16(refresh.ContractId[14]-'0')*1000 + uint16(refresh.ContractId[15]-'0')*100 + uint16(refresh.ContractId[16]-'0')*10 + uint16(refresh.ContractId[17]-'0')
-	part := float32(refresh.ContractId[18]-'0')*0.1 + float32(refresh.ContractId[19]-'0')*0.01 + float32(refresh.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (refresh OptionRefresh) GetStrikePrice() float64 {
+	whole := uint32(refresh.ContractId[13]-'0')*10000 + uint32(refresh.ContractId[14]-'0')*1000 + uint32(refresh.ContractId[15]-'0')*100 + uint32(refresh.ContractId[16]-'0')*10 + uint32(refresh.ContractId[17]-'0')
+	part := float64(refresh.ContractId[18]-'0')*0.1 + float64(refresh.ContractId[19]-'0')*0.01 + float64(refresh.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (refresh OptionRefresh) IsPut() bool {
@@ -278,11 +282,13 @@ func (refresh OptionRefresh) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, refresh.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, refresh.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", refresh.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (refresh OptionRefresh) GetUnderlyingSymbol() string {
@@ -321,19 +327,19 @@ type OptionUnusualActivity struct {
 	ContractId                 string
 	Type                       UAType
 	Sentiment                  UASentiment
-	TotalValue                 float32
+	TotalValue                 float64
 	TotalSize                  uint32
-	AveragePrice               float32
-	AskPriceAtExecution        float32
-	BidPriceAtExecution        float32
-	UnderlyingPriceAtExecution float32
+	AveragePrice               float64
+	AskPriceAtExecution        float64
+	BidPriceAtExecution        float64
+	UnderlyingPriceAtExecution float64
 	Timestamp                  float64
 }
 
-func (ua OptionUnusualActivity) GetStrikePrice() float32 {
-	whole := uint16(ua.ContractId[13]-'0')*10000 + uint16(ua.ContractId[14]-'0')*1000 + uint16(ua.ContractId[15]-'0')*100 + uint16(ua.ContractId[16]-'0')*10 + uint16(ua.ContractId[17]-'0')
-	part := float32(ua.ContractId[18]-'0')*0.1 + float32(ua.ContractId[19]-'0')*0.01 + float32(ua.ContractId[20]-'0')*0.001
-	return (float32(whole) + part)
+func (ua OptionUnusualActivity) GetStrikePrice() float64 {
+	whole := uint32(ua.ContractId[13]-'0')*10000 + uint32(ua.ContractId[14]-'0')*1000 + uint32(ua.ContractId[15]-'0')*100 + uint32(ua.ContractId[16]-'0')*10 + uint32(ua.ContractId[17]-'0')
+	part := float64(ua.ContractId[18]-'0')*0.1 + float64(ua.ContractId[19]-'0')*0.01 + float64(ua.ContractId[20]-'0')*0.001
+	return float64(whole) + part
 }
 
 func (ua OptionUnusualActivity) IsPut() bool {
@@ -348,11 +354,13 @@ func (ua OptionUnusualActivity) GetExpirationDate() time.Time {
 	if loadLocationErr != nil {
 		log.Printf("Client - Failure to load time location - %v\n", loadLocationErr)
 	}
-	time, err := time.ParseInLocation(TIME_FORMAT, ua.ContractId[6:12], newYork)
+	t, err := time.ParseInLocation(TIME_FORMAT, ua.ContractId[6:12], newYork)
 	if err != nil {
 		log.Printf("Client - Failure to parse expiration date from: %s - %v\n", ua.ContractId, err)
+		return time.Time{}
 	}
-	return time
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 16, 0, 0, 0, t.Location())
 }
 
 func (ua OptionUnusualActivity) GetUnderlyingSymbol() string {

@@ -1,17 +1,19 @@
 package main
 
 import (
-	"github.com/intrinio/intrinio-realtime-go-sdk"
-	"github.com/intrinio/intrinio-realtime-go-sdk/composite"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/intrinio/intrinio-realtime-go-sdk"
+	"github.com/intrinio/intrinio-realtime-go-sdk/composite"
 )
 
 // GreekSampleApp demonstrates real-time Greek calculations
 type GreekSampleApp struct {
 	timer                 *time.Ticker
+	dataTimer             *time.Ticker
 	greekClient           *composite.GreekClient
 	dataCache             composite.DataCache
 	seenGreekTickers      map[string]string
@@ -68,10 +70,18 @@ func (g *GreekSampleApp) OnGreek(key string, datum *composite.Greek, optionsCont
 	g.seenGreekTickersMutex.Lock()
 	g.seenGreekTickers[securityData.GetTickerSymbol()] = optionsContractData.GetContract()
 	g.seenGreekTickersMutex.Unlock()
+
+	// Log Greek object
+	//log.Printf("Greek Update for %s: %+v", optionsContractData.GetContract(), *datum)
+}
+
+func (g *GreekSampleApp) dataUpdateWorkerCallback() {
+	g.greekClient.SetIndexPrice("SPX", []string{"SPX", "SPXW"})
+	g.greekClient.SetIndexPrice("VIX", []string{"VIX", "VIXW"})
 }
 
 // timerCallback prints statistics every minute
-func (g *GreekSampleApp) timerCallback() {
+func (g *GreekSampleApp) statisticsTimerCallback() {
 	log.Printf("=== Statistics Update ===")
 	log.Printf("Options Trade Events: %d", atomic.LoadUint64(&g.optionsTradeEventCount))
 	log.Printf("Options Quote Events: %d", atomic.LoadUint64(&g.optionsQuoteEventCount))
@@ -103,8 +113,9 @@ func (g *GreekSampleApp) runGreekExample() error {
 	log.Println("Starting Greek sample app")
 
 	//symbols := []string{"AAPL", "MSFT", "SPY", "QQQ"}
-	symbols := []string{"JPM", "SPY", "QQQ", "AAPL", "NVDA"}
-
+	//symbols := []string{"VIX", "SPX", "SPXW", "AAPL", "NVDA"}
+	//symbols := []string{"VIX", "VIXW","SPX", "SPXW"}
+	symbols := []string{"VIX", "VIXW", "AAPL"}
 	// Create data cache
 	g.dataCache = composite.NewDataCache()
 
@@ -144,7 +155,19 @@ func (g *GreekSampleApp) runGreekExample() error {
 			case <-g.stopChan:
 				return
 			case <-g.timer.C:
-				g.timerCallback()
+				g.statisticsTimerCallback()
+			}
+		}
+	}()
+
+	g.dataTimer = time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+			select {
+			case <-g.stopChan:
+				return
+			case <-g.dataTimer.C:
+				g.dataUpdateWorkerCallback()
 			}
 		}
 	}()
