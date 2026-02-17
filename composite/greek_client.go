@@ -31,6 +31,7 @@ type GreekClient struct {
 
 // NewGreekClient creates a new GreekClient instance
 func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdated OnOptionsContractGreekDataUpdated, apiKey string, cache DataCache) *GreekClient {
+	var hasExternalCache = cache == nil
 	if cache == nil {
 		cache = NewDataCache()
 	}
@@ -45,7 +46,7 @@ func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdat
 		updateGreekDataFunc:         func(key string, oldValue, newValue *Greek) *Greek { return newValue },
 		seenTickers:                 make(map[string]time.Time),
 		dividendYieldWorking:        false,
-		selfCache:                   cache == nil,
+		selfCache:                   hasExternalCache,
 		apiKey:                      apiKey,
 	}
 
@@ -90,44 +91,44 @@ func (g *GreekClient) Stop() {
 	// Cleanup if needed
 }
 
-// OnTrade handles equities trade updates
-func (g *GreekClient) OnTrade(trade *intrinio.EquityTrade) {
-	if trade != nil {
+// OnEquitiesTrade handles equities trade updates
+func (g *GreekClient) OnEquitiesTrade(trade *intrinio.EquityTrade) {
+	if trade != nil && g.selfCache {
 		g.cache.SetEquityTrade(trade)
 	}
 }
 
-// OnQuote handles equities quote updates
-func (g *GreekClient) OnQuote(quote *intrinio.EquityQuote) {
-	if quote != nil {
+// OnEquitiesQuote handles equities quote updates
+func (g *GreekClient) OnEquitiesQuote(quote *intrinio.EquityQuote) {
+	if quote != nil && g.selfCache {
 		g.cache.SetEquityQuote(quote)
 	}
 }
 
-// OnTrade handles options trade updates
+// OnEquitiesTrade handles options trade updates
 func (g *GreekClient) OnOptionsTrade(trade *intrinio.OptionTrade) {
-	if trade != nil {
+	if trade != nil && g.selfCache {
 		g.cache.SetOptionsTrade(trade)
 	}
 }
 
-// OnQuote handles options quote updates
+// OnEquitiesQuote handles options quote updates
 func (g *GreekClient) OnOptionsQuote(quote *intrinio.OptionQuote) {
-	if quote != nil {
+	if quote != nil && g.selfCache {
 		g.cache.SetOptionsQuote(quote)
 	}
 }
 
-// OnRefresh handles options refresh updates
-func (g *GreekClient) OnRefresh(refresh *intrinio.OptionRefresh) {
-	if refresh != nil {
+// OnOptionsRefresh handles options refresh updates
+func (g *GreekClient) OnOptionsRefresh(refresh *intrinio.OptionRefresh) {
+	if refresh != nil && g.selfCache {
 		g.cache.SetOptionsRefresh(refresh)
 	}
 }
 
-// OnUnusualActivity handles options unusual activity updates
-func (g *GreekClient) OnUnusualActivity(unusualActivity *OptionsUnusualActivity) {
-	if unusualActivity != nil {
+// OnOptionsUnusualActivity handles options unusual activity updates
+func (g *GreekClient) OnOptionsUnusualActivity(unusualActivity *OptionsUnusualActivity) {
+	if unusualActivity != nil && g.selfCache {
 		g.cache.SetOptionsUnusualActivity(unusualActivity)
 	}
 }
@@ -351,7 +352,6 @@ func (g *GreekClient) updateGreeks(key string, datum *float64, dataCache DataCac
 			g.updateGreeksForSecurity(securityData, dataCache)
 		}
 	}
-
 }
 
 // updateGreeksForSecurity updates Greeks for a specific security

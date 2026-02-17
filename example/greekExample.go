@@ -72,7 +72,7 @@ func (g *GreekSampleApp) OnGreek(key string, datum *composite.Greek, optionsCont
 	g.seenGreekTickersMutex.Unlock()
 
 	// Log Greek object
-	log.Printf("Greek Update for %s: %+v", optionsContractData.GetContract(), *datum)
+	//log.Printf("Greek Update for %s: %+v", optionsContractData.GetContract(), *datum)
 }
 
 func (g *GreekSampleApp) dataUpdateWorkerCallback() {
