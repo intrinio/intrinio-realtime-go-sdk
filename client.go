@@ -1,6 +1,7 @@
 package intrinio
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -18,6 +19,7 @@ const (
 	HEARTBEAT_INTERVAL       int = 20
 	MAX_OPTIONS_QUEUE_DEPTH  int = 20000
 	MAX_EQUITIES_QUEUE_DEPTH int = 10000
+	connectTimeout               = 30 * time.Second
 )
 
 func min(a, b int) int {
@@ -27,17 +29,32 @@ func min(a, b int) int {
 	return b
 }
 
+func newWebSocketDialer() websocket.Dialer {
+	return websocket.Dialer{
+		ReadBufferSize:   10240,
+		WriteBufferSize:  128,
+		HandshakeTimeout: connectTimeout,
+	}
+}
+
 func doBackoff(fn func() bool, isStopped *bool) {
 	i := 0
-	backoff := selfHealBackoffs[i]
-	success := fn()
-	for !success && !*isStopped {
-		time.Sleep(time.Duration(backoff) * time.Second)
-		if !*isStopped {
-			i = min(i+1, len(selfHealBackoffs)-1)
-			backoff = selfHealBackoffs[i]
+	for !*isStopped {
+		success := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("Client - Attempt failed: %v\n", r)
+				}
+			}()
 			success = fn()
+		}()
+		if success || *isStopped {
+			return
 		}
+		backoff := selfHealBackoffs[i]
+		i = min(i+1, len(selfHealBackoffs)-1)
+		time.Sleep(time.Duration(backoff) * time.Second)
 	}
 }
 
@@ -198,6 +215,21 @@ func (client *Client) getToken() string {
 	return client.token
 }
 
+func (client *Client) dialWebSocket(wsUrl string, wsHeader map[string][]string) (*websocket.Conn, *http.Response, error) {
+	dialer := newWebSocketDialer()
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+	return dialer.DialContext(ctx, wsUrl, http.Header(wsHeader))
+}
+
+func (client *Client) closeWebSocket() {
+	if client.wsConn != nil {
+		conn := client.wsConn
+		client.wsConn = nil
+		_ = conn.Close()
+	}
+}
+
 func (client *Client) initWebSocket(token string) {
 	log.Println("Client - Connecting...")
 	wsUrl := client.config.getWSUrl(token)
@@ -209,9 +241,13 @@ func (client *Client) initWebSocket(token string) {
 	conn, resp, dialErr := dialer.Dial(wsUrl, wsHeader)
 	if dialErr != nil {
 		log.Printf("Client - Connection failure: %v\n", dialErr)
+		if conn != nil {
+			conn.Close()
+		}
 		return
 	}
 	log.Printf("Client - Status: %s\n", resp.Status)
+	client.closeWebSocket()
 	client.wsConn = conn
 	if reflect.ValueOf(client.heartbeat).IsZero() {
 		//log.Println("Client - Starting heartbeat")
@@ -223,15 +259,16 @@ func (client *Client) initWebSocket(token string) {
 func (client *Client) tryResetWebSocket() bool {
 	wsUrl := client.config.getWSUrl(client.token)
 	wsHeader := map[string][]string{"UseNewEquitiesFormat": {"true"}}
-	dialer := websocket.Dialer{
-		ReadBufferSize:  10240,
-		WriteBufferSize: 128,
-	}
-	conn, resp, dialErr := dialer.Dial(wsUrl, wsHeader)
+	conn, resp, dialErr := client.dialWebSocket(wsUrl, wsHeader)
 	if dialErr != nil {
+		log.Printf("Client - Reconnect attempt failed: %v\n", dialErr)
+		if conn != nil {
+			conn.Close()
+		}
 		return false
 	}
 	log.Printf("Client - Status: %s\n", resp.Status)
+	client.closeWebSocket()
 	client.wsConn = conn
 	log.Printf("Client - Rejoining")
 	for key := range client.subscriptions {
@@ -243,20 +280,35 @@ func (client *Client) tryResetWebSocket() bool {
 }
 
 func (client *Client) reconnect() {
-	client.wsConn.Close()
-	time.Sleep(10 * time.Second)
-	doBackoff(func() bool {
-		log.Println("Client - Reconnecting...")
-		if time.Since(client.tokenUpdateTime) < (24 * time.Hour) {
-			return client.tryResetWebSocket()
-		} else {
-			if client.trySetToken() {
-				return client.tryResetWebSocket()
-			} else {
-				return false
-			}
+	for !client.isStopped {
+		panicked := false
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("Client - Reconnect loop ended unexpectedly: %v\n", r)
+					panicked = true
+				}
+			}()
+			client.closeWebSocket()
+			time.Sleep(10 * time.Second)
+			doBackoff(func() bool {
+				log.Println("Client - Reconnecting...")
+				if time.Since(client.tokenUpdateTime) < (24 * time.Hour) {
+					return client.tryResetWebSocket()
+				} else {
+					if client.trySetToken() {
+						return client.tryResetWebSocket()
+					} else {
+						return false
+					}
+				}
+			}, &client.isStopped)
+		}()
+		if !panicked || client.isStopped {
+			return
 		}
-	}, &client.isStopped)
+		time.Sleep(time.Duration(selfHealBackoffs[0]) * time.Second)
+	}
 }
 
 func (client *Client) write() {
