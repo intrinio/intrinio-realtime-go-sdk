@@ -1,6 +1,6 @@
 {
 	"ApiKey": "",
-	"Provider": "OPRA",
+	"Provider": "OPTIONS_EDGE",
 	"IPAddress": "",
 	"Delayed": false
 }

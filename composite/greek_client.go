@@ -3,14 +3,14 @@ package composite
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/intrinio/intrinio-realtime-go-sdk"
 	"io"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 // GreekClient calculates real-time Greeks from a stream of equities and options trades and quotes
@@ -31,6 +31,7 @@ type GreekClient struct {
 
 // NewGreekClient creates a new GreekClient instance
 func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdated OnOptionsContractGreekDataUpdated, apiKey string, cache DataCache) *GreekClient {
+	var hasExternalCache = cache == nil
 	if cache == nil {
 		cache = NewDataCache()
 	}
@@ -45,7 +46,7 @@ func NewGreekClient(greekUpdateFrequency GreekUpdateFrequency, onGreekValueUpdat
 		updateGreekDataFunc:         func(key string, oldValue, newValue *Greek) *Greek { return newValue },
 		seenTickers:                 make(map[string]time.Time),
 		dividendYieldWorking:        false,
-		selfCache:                   cache == nil,
+		selfCache:                   hasExternalCache,
 		apiKey:                      apiKey,
 	}
 
@@ -90,44 +91,44 @@ func (g *GreekClient) Stop() {
 	// Cleanup if needed
 }
 
-// OnTrade handles equities trade updates
-func (g *GreekClient) OnTrade(trade *intrinio.EquityTrade) {
-	if trade != nil {
+// OnEquitiesTrade handles equities trade updates
+func (g *GreekClient) OnEquitiesTrade(trade *intrinio.EquityTrade) {
+	if trade != nil && g.selfCache {
 		g.cache.SetEquityTrade(trade)
 	}
 }
 
-// OnQuote handles equities quote updates
-func (g *GreekClient) OnQuote(quote *intrinio.EquityQuote) {
-	if quote != nil {
+// OnEquitiesQuote handles equities quote updates
+func (g *GreekClient) OnEquitiesQuote(quote *intrinio.EquityQuote) {
+	if quote != nil && g.selfCache {
 		g.cache.SetEquityQuote(quote)
 	}
 }
 
-// OnTrade handles options trade updates
+// OnEquitiesTrade handles options trade updates
 func (g *GreekClient) OnOptionsTrade(trade *intrinio.OptionTrade) {
-	if trade != nil {
+	if trade != nil && g.selfCache {
 		g.cache.SetOptionsTrade(trade)
 	}
 }
 
-// OnQuote handles options quote updates
+// OnEquitiesQuote handles options quote updates
 func (g *GreekClient) OnOptionsQuote(quote *intrinio.OptionQuote) {
-	if quote != nil {
+	if quote != nil && g.selfCache {
 		g.cache.SetOptionsQuote(quote)
 	}
 }
 
-// OnRefresh handles options refresh updates
-func (g *GreekClient) OnRefresh(refresh *intrinio.OptionRefresh) {
-	if refresh != nil {
+// OnOptionsRefresh handles options refresh updates
+func (g *GreekClient) OnOptionsRefresh(refresh *intrinio.OptionRefresh) {
+	if refresh != nil && g.selfCache {
 		g.cache.SetOptionsRefresh(refresh)
 	}
 }
 
-// OnUnusualActivity handles options unusual activity updates
-func (g *GreekClient) OnUnusualActivity(unusualActivity *OptionsUnusualActivity) {
-	if unusualActivity != nil {
+// OnOptionsUnusualActivity handles options unusual activity updates
+func (g *GreekClient) OnOptionsUnusualActivity(unusualActivity *OptionsUnusualActivity) {
+	if unusualActivity != nil && g.selfCache {
 		g.cache.SetOptionsUnusualActivity(unusualActivity)
 	}
 }
@@ -163,7 +164,7 @@ func (g *GreekClient) FetchRiskFreeInterestRate() {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/economic/$DTB3/data_point/level?&api_key=%s", g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Risk Free Rate attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Risk Free Rate attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -182,6 +183,58 @@ func (g *GreekClient) FetchRiskFreeInterestRate() {
 						return newValue
 					})
 					success = true
+				}
+			}
+		}
+	}
+}
+
+func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
+	success := false
+	tryCount := 0
+
+	for success == false && tryCount < 10 {
+		tryCount++
+
+		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/%s/realtime?&api_key=%s", symbol, g.apiKey))
+
+		if err != nil {
+			fmt.Printf("Unable to retrieve Index price. Attempt %i", tryCount)
+		} else {
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+
+			if err == nil {
+				// Parse JSON response
+				var indexResponse struct {
+					LastPrice string `json:"last_price"`
+				}
+				err := json.Unmarshal(body, &indexResponse)
+
+				if err != nil {
+					log.Printf("-------------ERROR----------")
+					log.Printf("Unable to parse json")
+					log.Printf("%v", err)
+					log.Printf("----------------------------")
+					continue
+				}
+
+				price, err := strconv.ParseFloat(indexResponse.LastPrice, 64)
+
+				for _, sym := range variants {
+
+					securityTrade := &intrinio.EquityTrade{
+						Symbol: sym,
+						Price:  price,
+					}
+
+					if err == nil {
+						//log.Printf("Setting Index Price to %v for %s", price, sym)
+						g.cache.SetEquityTrade(securityTrade)
+
+						success = true
+					}
 				}
 			}
 		}
@@ -254,7 +307,7 @@ func (g *GreekClient) fetchBulkCompanyDividendYield() {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/companies/daily_metrics?page_size=10000&api_key=%s", g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Dividend Yield attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Dividend Yield attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
@@ -299,7 +352,6 @@ func (g *GreekClient) updateGreeks(key string, datum *float64, dataCache DataCac
 			g.updateGreeksForSecurity(securityData, dataCache)
 		}
 	}
-
 }
 
 // updateGreeksForSecurity updates Greeks for a specific security
@@ -392,8 +444,8 @@ func (g *GreekClient) blackScholesCalc(optionsContractData OptionsContractData, 
 		dividendYield = float64Ptr(0.0) // Default 0%
 	}
 
-	strike := (g.getStrikePrice(latestQuote.ContractId))
-	isPut := g.isPut(latestQuote.ContractId)
+	strike := latestQuote.GetStrikePrice()
+	isPut := latestQuote.IsPut()
 	yearsToExpiration := g.getYearsToExpiration(latestTrade, latestQuote)
 
 	// Calculate Greeks using Black-Scholes
@@ -430,9 +482,9 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 		dividendYield = float64Ptr(0.0) // Default 0%
 	}
 
-	strike := (g.getStrikePrice(latestTrade.ContractId))
-	isPut := g.isPut(latestTrade.ContractId)
-	yearsToExpiration := g.getYearsToExpirationTradeOnly(latestTrade)
+	strike := latestTrade.GetStrikePrice()
+	isPut := latestTrade.IsPut()
+	yearsToExpiration := g.getYearsToExpiration(latestTrade, nil)
 
 	// Calculate Greeks using Black-Scholes
 	calculator := &BlackScholesGreekCalculator{}
@@ -448,74 +500,32 @@ func (g *GreekClient) blackScholesCalcOptionsEdge(optionsContractData OptionsCon
 }
 
 // getYearsToExpiration calculates the years to expiration
-func (b *GreekClient) getYearsToExpirationTradeOnly(latestOptionTrade *intrinio.OptionTrade) float64 {
-	// Use the expiration date from the contract
-	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
-	now := time.Now()
-
-	diff := expirationDate.Sub(now).Seconds()
-	if diff <= 0.0 {
-		return 0.0
-	}
-	return diff / 31557600.0
-}
-
-// getYearsToExpiration calculates the years to expiration
 func (b *GreekClient) getYearsToExpiration(latestOptionTrade *intrinio.OptionTrade, latestOptionQuote *intrinio.OptionQuote) float64 {
 	// Use the expiration date from the contract
-	expirationDate := b.getExpirationDate(latestOptionTrade.ContractId)
-	now := time.Now()
+	expirationDate := latestOptionTrade.GetExpirationDate()
 
-	diff := expirationDate.Sub(now).Seconds()
+	var latestEventTime float64
+
+	if latestOptionTrade != nil {
+		latestEventTime = latestOptionTrade.Timestamp
+	}
+
+	if latestOptionQuote != nil && latestOptionQuote.Timestamp > latestEventTime {
+		latestEventTime = latestOptionQuote.Timestamp
+	}
+
+	var eventTime time.Time
+	if latestEventTime != 0 {
+		sec := int64(latestEventTime)
+		nsec := int64((latestEventTime - float64(sec)) * 1e9)
+		eventTime = time.Unix(sec, nsec)
+	}
+
+	diff := expirationDate.Sub(eventTime).Seconds()
 	if diff <= 0.0 {
 		return 0.0
 	}
 	return diff / 31557600.0
-}
-
-// getExpirationDate extracts the expiration date from the contract identifier
-func (b *GreekClient) getExpirationDate(contract string) time.Time {
-	if len(contract) < 12 {
-		return time.Time{}
-	}
-
-	// Extract date from contract (format: AAPL__201016C00100000)
-	dateStr := contract[6:12]
-
-	// Parse date in format "yyMMdd"
-	expirationDate, err := time.Parse("060102", dateStr)
-	if err != nil {
-		return time.Time{}
-	}
-
-	return expirationDate
-}
-
-// isPut checks if the option is a put
-func (b *GreekClient) isPut(contract string) bool {
-	if len(contract) < 13 {
-		return false
-	}
-	return contract[12] == 'P'
-}
-
-// getStrikePrice extracts the strike price from the contract identifier
-func (b *GreekClient) getStrikePrice(contract string) float64 {
-	if len(contract) < 19 {
-		return 0.0
-	}
-
-	// Extract strike price from contract (format: AAPL__201016C00100000)
-	strikeStr := contract[13:19]
-
-	var whole uint32
-	for i := 0; i < 5; i++ {
-		whole += uint32(strikeStr[i]-'0') * uint32(math.Pow10(4-i))
-	}
-
-	part := float64(strikeStr[5]-'0') * 0.1
-
-	return float64(whole) + part
 }
 
 // Helper function to create float64 pointers

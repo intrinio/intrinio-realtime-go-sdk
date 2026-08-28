@@ -10,9 +10,9 @@ type EquityTrade struct {
 	Symbol       string
 	Source       uint8
 	MarketCenter rune
-	Price        float32
+	Price        float64
 	Size         uint32
-	TotalVolume  uint32
+	TotalVolume  uint64
 	Timestamp    float64
 	Conditions   string
 }
@@ -22,10 +22,10 @@ func parseEquityTrade(bytes []byte) EquityTrade {
 	symbol := string(bytes[3 : 3+symbolLen])
 	source := bytes[3+symbolLen]
 	marketCenter := rune(binary.LittleEndian.Uint16(bytes[4+symbolLen : 6+symbolLen]))
-	price := math.Float32frombits(binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen]))
+	price := float64(math.Float32frombits(binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen])))
 	size := binary.LittleEndian.Uint32(bytes[10+symbolLen : 14+symbolLen])
 	timestamp := float64(binary.LittleEndian.Uint64(bytes[14+symbolLen:22+symbolLen])) / 1000000000.0
-	totalVolume := binary.LittleEndian.Uint32(bytes[22+symbolLen : 26+symbolLen])
+	totalVolume := uint64(binary.LittleEndian.Uint32(bytes[22+symbolLen : 26+symbolLen]))
 	conditionsLen := bytes[26+symbolLen]
 	conditions := ""
 	if conditionsLen > 0 {
@@ -55,7 +55,7 @@ type EquityQuote struct {
 	Symbol       string
 	Source       uint8
 	MarketCenter rune
-	Price        float32
+	Price        float64
 	Size         uint32
 	Timestamp    float64
 	Conditions   string
@@ -66,7 +66,7 @@ func parseEquityQuote(bytes []byte) EquityQuote {
 	symbol := string(bytes[3 : 3+symbolLen])
 	source := bytes[3+symbolLen]
 	marketCenter := rune(binary.LittleEndian.Uint16(bytes[4+symbolLen : 6+symbolLen]))
-	price := math.Float32frombits(binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen]))
+	price := float64(math.Float32frombits(binary.LittleEndian.Uint32(bytes[6+symbolLen : 10+symbolLen])))
 	size := binary.LittleEndian.Uint32(bytes[10+symbolLen : 14+symbolLen])
 	timestamp := float64(binary.LittleEndian.Uint64(bytes[14+symbolLen:22+symbolLen])) / 1000000000.0
 	conditionsLen := bytes[22+symbolLen]
