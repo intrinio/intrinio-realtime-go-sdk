@@ -1,8 +1,9 @@
 package composite
 
 import (
-	"github.com/intrinio/intrinio-realtime-go-sdk"
 	"sync"
+
+	"github.com/intrinio/intrinio-realtime-go-sdk"
 )
 
 // securityData implements the SecurityData interface
@@ -315,16 +316,6 @@ func (s *securityData) SetOptionsContractTradeWithCallback(trade *intrinio.Optio
 	}
 
 	result := contractData.SetTradeWithCallback(trade, callback, s, dataCache)
-	if result && callback != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// Log error here if logging is available
-				}
-			}()
-			callback(contractData, dataCache, s, trade)
-		}()
-	}
 	return result
 }
 
@@ -368,16 +359,6 @@ func (s *securityData) SetOptionsContractQuoteWithCallback(quote *intrinio.Optio
 	}
 
 	result := contractData.SetQuoteWithCallback(quote, callback, s, dataCache)
-	if result && callback != nil {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// Log error here if logging is available
-				}
-			}()
-			callback(contractData, dataCache, s, quote)
-		}()
-	}
 	return result
 }
 
