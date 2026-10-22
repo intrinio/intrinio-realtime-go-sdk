@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -29,6 +30,43 @@ const (
 	defaultReconnectDelay        = 10 * time.Second
 )
 
+type clientLifecycle uint8
+
+const (
+	clientStopped clientLifecycle = iota
+	clientStarting
+	clientStarted
+	clientStopping
+)
+
+type clientRun struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	startDone chan struct{}
+	done      chan struct{}
+	startOnce sync.Once
+	doneOnce  sync.Once
+	wg        sync.WaitGroup
+}
+
+func newClientRun() *clientRun {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &clientRun{
+		ctx:       ctx,
+		cancel:    cancel,
+		startDone: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+}
+
+func (run *clientRun) signalStartDone() {
+	run.startOnce.Do(func() { close(run.startDone) })
+}
+
+func (run *clientRun) signalDone() {
+	run.doneOnce.Do(func() { close(run.done) })
+}
+
 func waitFor(ctx context.Context, delay time.Duration) bool {
 	if delay <= 0 {
 		return ctx.Err() == nil
@@ -52,8 +90,8 @@ func doBackoff(ctx context.Context, backoffs []time.Duration, fn func() bool) bo
 		success := false
 		func() {
 			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("Client - Attempt failed: %v\n", r)
+				if recovered := recover(); recovered != nil {
+					log.Printf("Client - Attempt failed: %v\n", recovered)
 				}
 			}()
 			success = fn()
@@ -61,6 +99,7 @@ func doBackoff(ctx context.Context, backoffs []time.Duration, fn func() bool) bo
 		if success {
 			return true
 		}
+
 		delayIndex := attempt
 		if delayIndex >= len(backoffs) {
 			delayIndex = len(backoffs) - 1
@@ -89,20 +128,19 @@ type Client struct {
 	txtMsgCount     atomic.Uint32
 	workerCount     int
 	subscriptions   map[string]bool
-	isStopped       bool
-	isClosed        bool
-	closeWg         sync.WaitGroup
-	runWg           sync.WaitGroup
+	lifecycle       clientLifecycle
+	run             *clientRun
 	readChannel     chan []byte
+	priorityQueue   *priorityQueue
 	writeChannel    chan []byte
 	httpClient      *http.Client
 	wsConn          *websocket.Conn
+	connectingConn  *websocket.Conn
 	config          Config
-	work            func()
+	work            func(context.Context)
 	composeJoinMsg  func(string) []byte
 	composeLeaveMsg func(string) []byte
-	ctx             context.Context
-	cancel          context.CancelFunc
+	socketHeaders   http.Header
 	connectTimeout  time.Duration
 	reconnectDelay  time.Duration
 	backoffs        []time.Duration
@@ -111,18 +149,20 @@ type Client struct {
 
 func newClient(c Config, workerCount, readQueueDepth int) *Client {
 	return &Client{
-		isStopped:      true,
-		isClosed:       true,
 		workerCount:    workerCount,
 		readChannel:    make(chan []byte, readQueueDepth),
 		writeChannel:   make(chan []byte, 1000),
 		subscriptions:  make(map[string]bool),
 		httpClient:     http.DefaultClient,
 		config:         c,
+		lifecycle:      clientStopped,
 		connectTimeout: defaultConnectTimeout,
 		reconnectDelay: defaultReconnectDelay,
 		backoffs:       append([]time.Duration(nil), selfHealBackoffs...),
 		heartbeat:      time.Duration(HEARTBEAT_INTERVAL) * time.Second,
+		socketHeaders: http.Header{
+			"Client-Information": {"IntrinioRealtimeOptionsGoSDKv4.0"},
+		},
 	}
 }
 
@@ -133,27 +173,56 @@ func NewOptionsClient(
 	onRefresh func(OptionRefresh),
 	onUnusualActivity func(OptionUnusualActivity)) *Client {
 	client := newClient(c, 1, MAX_OPTIONS_QUEUE_DEPTH)
+	client.priorityQueue = newPriorityQueue(4, MAX_OPTIONS_QUEUE_DEPTH)
+	client.socketHeaders.Set("UseNewOptionsFormat", "v2")
+	if c.Delayed {
+		client.socketHeaders.Set("Delay", "true")
+	}
 	if onTrade != nil {
 		client.workerCount++
 	}
 	if onQuote != nil {
 		client.workerCount += 8
 	}
-	client.work = func() {
-		defer client.closeWg.Done()
-		for {
-			if len(client.readChannel) == 0 {
-				if client.stoppedAndClosed() {
-					return
-				}
-				time.Sleep(time.Second)
-			}
-			workOnOptions(
-				client.readChannel,
+	client.work = func(ctx context.Context) {
+		for ctx.Err() == nil {
+			didWork := workOnOptions(
+				client.priorityQueue,
 				onTrade,
 				onQuote,
 				onRefresh,
 				onUnusualActivity)
+
+			select {
+			case <-ctx.Done():
+				return
+			case data := <-client.readChannel:
+				didWork = true
+				err := queueOptionMessages(data, client.priorityQueue, func() bool {
+					return workOnOptions(
+						client.priorityQueue,
+						onTrade,
+						onQuote,
+						onRefresh,
+						onUnusualActivity)
+				})
+				if err != nil {
+					log.Printf("Option Client - Invalid data message: %v", err)
+				}
+			default:
+			}
+
+			if workOnOptions(
+				client.priorityQueue,
+				onTrade,
+				onQuote,
+				onRefresh,
+				onUnusualActivity) {
+				didWork = true
+			}
+			if !didWork && !waitFor(ctx, 10*time.Millisecond) {
+				return
+			}
 		}
 	}
 	client.composeJoinMsg = func(symbol string) []byte {
@@ -173,22 +242,44 @@ func NewEquitiesClient(
 	onTrade func(EquityTrade),
 	onQuote func(EquityQuote)) *Client {
 	client := newClient(c, 2, MAX_EQUITIES_QUEUE_DEPTH)
+	client.priorityQueue = newPriorityQueue(2, MAX_EQUITIES_QUEUE_DEPTH)
+	client.socketHeaders.Set("UseNewEquitiesFormat", "v2")
 	if onQuote != nil {
 		client.workerCount += 2
 	}
-	client.work = func() {
-		defer client.closeWg.Done()
-		for {
-			if len(client.readChannel) == 0 {
-				if client.stoppedAndClosed() {
-					return
-				}
-				time.Sleep(time.Second)
-			}
-			workOnEquities(
-				client.readChannel,
+	client.work = func(ctx context.Context) {
+		for ctx.Err() == nil {
+			didWork := workOnEquities(
+				client.priorityQueue,
 				onTrade,
 				onQuote)
+
+			select {
+			case <-ctx.Done():
+				return
+			case data := <-client.readChannel:
+				didWork = true
+				err := queueEquityMessages(data, client.priorityQueue, func() bool {
+					return workOnEquities(
+						client.priorityQueue,
+						onTrade,
+						onQuote)
+				})
+				if err != nil {
+					log.Printf("Equity Client - Invalid data message: %v", err)
+				}
+			default:
+			}
+
+			if workOnEquities(
+				client.priorityQueue,
+				onTrade,
+				onQuote) {
+				didWork = true
+			}
+			if !didWork && !waitFor(ctx, 10*time.Millisecond) {
+				return
+			}
 		}
 	}
 	client.composeJoinMsg = func(symbol string) []byte {
@@ -201,16 +292,6 @@ func NewEquitiesClient(
 	return client
 }
 
-func (client *Client) operationContext() context.Context {
-	client.stateMu.RLock()
-	ctx := client.ctx
-	client.stateMu.RUnlock()
-	if ctx == nil {
-		return context.Background()
-	}
-	return ctx
-}
-
 func (client *Client) timeout() time.Duration {
 	client.stateMu.RLock()
 	timeout := client.connectTimeout
@@ -221,23 +302,28 @@ func (client *Client) timeout() time.Duration {
 	return timeout
 }
 
-func (client *Client) stoppedAndClosed() bool {
+func (client *Client) currentRun() *clientRun {
 	client.stateMu.RLock()
-	result := client.isStopped && client.isClosed
+	run := client.run
 	client.stateMu.RUnlock()
-	return result
+	return run
 }
 
-func (client *Client) stopped() bool {
-	client.stateMu.RLock()
-	result := client.isStopped
-	client.stateMu.RUnlock()
-	return result
+func (client *Client) operationContext() context.Context {
+	run := client.currentRun()
+	if run == nil {
+		return context.Background()
+	}
+	return run.ctx
 }
 
-func (client *Client) trySetToken() bool {
+func (client *Client) trySetTokenForRun(run *clientRun) bool {
 	log.Print("Client - Authorizing...")
-	ctx, cancel := context.WithTimeout(client.operationContext(), client.timeout())
+	baseContext := context.Background()
+	if run != nil {
+		baseContext = run.ctx
+	}
+	ctx, cancel := context.WithTimeout(baseContext, client.timeout())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.config.getAuthUrl(), nil)
@@ -270,33 +356,87 @@ func (client *Client) trySetToken() bool {
 	return true
 }
 
+func (client *Client) trySetToken() bool {
+	return client.trySetTokenForRun(client.currentRun())
+}
+
 func (client *Client) tokenValue() (string, bool) {
 	client.stateMu.RLock()
 	token := client.token
-	fresh := time.Since(client.tokenUpdateTime) < 24*time.Hour
+	fresh := token != "" && time.Since(client.tokenUpdateTime) < 24*time.Hour
 	client.stateMu.RUnlock()
 	return token, fresh
 }
 
-func (client *Client) getToken() string {
-	if token, fresh := client.tokenValue(); fresh {
-		return token
-	}
-	ctx := client.operationContext()
+func (client *Client) settings() ([]time.Duration, time.Duration) {
 	client.stateMu.RLock()
 	backoffs := append([]time.Duration(nil), client.backoffs...)
+	reconnectDelay := client.reconnectDelay
 	client.stateMu.RUnlock()
-	doBackoff(ctx, backoffs, client.trySetToken)
-	token, _ := client.tokenValue()
-	return token
+	return backoffs, reconnectDelay
 }
 
-func (client *Client) dialWebSocket(wsURL string, wsHeader http.Header) (*websocket.Conn, *http.Response, error) {
+func (client *Client) dialWebSocket(
+	run *clientRun,
+	wsURL string,
+	wsHeader http.Header) (*websocket.Conn, *http.Response, error) {
 	timeout := client.timeout()
 	dialer := newWebSocketDialer(timeout)
-	ctx, cancel := context.WithTimeout(client.operationContext(), timeout)
-	defer cancel()
-	return dialer.DialContext(ctx, wsURL, wsHeader)
+	baseContext := context.Background()
+	if run != nil {
+		baseContext = run.ctx
+	}
+	ctx, cancel := context.WithTimeout(baseContext, timeout)
+
+	// Gorilla WebSocket uses the context deadline during the HTTP upgrade, but
+	// cancellation alone does not interrupt a server that accepts the TCP
+	// connection and never answers the upgrade request. Keep hold of the raw
+	// connection so Stop can abort TLS and upgrade handshakes
+	// promptly instead of waiting for the full connection timeout.
+	var pendingMu sync.Mutex
+	var pending net.Conn
+	netDialer := &net.Dialer{}
+	dialer.NetDialContext = func(dialCtx context.Context, network, address string) (net.Conn, error) {
+		conn, err := netDialer.DialContext(dialCtx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		pendingMu.Lock()
+		if ctx.Err() != nil {
+			pendingMu.Unlock()
+			_ = conn.Close()
+			return nil, ctx.Err()
+		}
+		pending = conn
+		pendingMu.Unlock()
+		return conn, nil
+	}
+
+	watcherDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			pendingMu.Lock()
+			if pending != nil {
+				_ = pending.Close()
+			}
+			pendingMu.Unlock()
+		case <-watcherDone:
+		}
+	}()
+
+	conn, resp, err := dialer.DialContext(ctx, wsURL, wsHeader)
+	pendingMu.Lock()
+	pending = nil
+	pendingMu.Unlock()
+	close(watcherDone)
+	ctxErr := ctx.Err()
+	cancel()
+	if err == nil && ctxErr != nil {
+		_ = conn.Close()
+		return nil, resp, ctxErr
+	}
+	return conn, resp, err
 }
 
 func (client *Client) currentConnection() *websocket.Conn {
@@ -306,16 +446,56 @@ func (client *Client) currentConnection() *websocket.Conn {
 	return conn
 }
 
-func (client *Client) installConnection(conn *websocket.Conn) bool {
+func (client *Client) currentConnectionForRun(run *clientRun) *websocket.Conn {
+	client.stateMu.RLock()
+	defer client.stateMu.RUnlock()
+	if client.run != run || client.lifecycle == clientStopping || client.lifecycle == clientStopped {
+		return nil
+	}
+	return client.wsConn
+}
+
+func (client *Client) isCurrentConnection(run *clientRun, conn *websocket.Conn) bool {
+	client.stateMu.RLock()
+	defer client.stateMu.RUnlock()
+	return client.run == run && client.wsConn == conn
+}
+
+func (client *Client) trackConnectingConnection(run *clientRun, conn *websocket.Conn) bool {
 	client.stateMu.Lock()
-	if client.ctx != nil && (client.isStopped || client.ctx.Err() != nil) {
+	defer client.stateMu.Unlock()
+	if run != nil && (client.run != run || client.lifecycle == clientStopping ||
+		client.lifecycle == clientStopped || run.ctx.Err() != nil) {
+		return false
+	}
+	client.connectingConn = conn
+	return true
+}
+
+func (client *Client) clearConnectingConnection(conn *websocket.Conn) {
+	client.stateMu.Lock()
+	if client.connectingConn == conn {
+		client.connectingConn = nil
+	}
+	client.stateMu.Unlock()
+}
+
+func (client *Client) installConnection(run *clientRun, conn *websocket.Conn) bool {
+	client.stateMu.Lock()
+	if run != nil && (client.run != run || client.lifecycle == clientStopping ||
+		client.lifecycle == clientStopped || run.ctx.Err() != nil) {
+		if client.connectingConn == conn {
+			client.connectingConn = nil
+		}
 		client.stateMu.Unlock()
 		_ = conn.Close()
 		return false
 	}
 	oldConn := client.wsConn
 	client.wsConn = conn
-	client.isClosed = false
+	if client.connectingConn == conn {
+		client.connectingConn = nil
+	}
 	client.stateMu.Unlock()
 	if oldConn != nil && oldConn != conn {
 		_ = oldConn.Close()
@@ -323,22 +503,33 @@ func (client *Client) installConnection(conn *websocket.Conn) bool {
 	return true
 }
 
-func (client *Client) closeWebSocket() {
+func (client *Client) closeWebSocketForRun(run *clientRun) {
 	client.stateMu.Lock()
+	if run != nil && client.run != run {
+		client.stateMu.Unlock()
+		return
+	}
 	conn := client.wsConn
+	connectingConn := client.connectingConn
 	client.wsConn = nil
-	client.isClosed = true
+	client.connectingConn = nil
 	client.stateMu.Unlock()
 	if conn != nil {
 		_ = conn.Close()
 	}
+	if connectingConn != nil && connectingConn != conn {
+		_ = connectingConn.Close()
+	}
+}
+
+func (client *Client) closeWebSocket() {
+	client.closeWebSocketForRun(nil)
 }
 
 func (client *Client) markConnectionFailed(conn *websocket.Conn) {
 	client.stateMu.Lock()
 	if client.wsConn == conn {
 		client.wsConn = nil
-		client.isClosed = true
 	}
 	client.stateMu.Unlock()
 	if conn != nil {
@@ -363,17 +554,32 @@ func (client *Client) drainWriteChannel() {
 	}
 }
 
-func (client *Client) connectAndRejoin(token string, headers http.Header) bool {
-	conn, resp, err := client.dialWebSocket(client.config.getWSUrl(token), headers)
+func (client *Client) webSocketHeaders() http.Header {
+	headers := make(http.Header, len(client.socketHeaders))
+	for key, values := range client.socketHeaders {
+		headers[key] = append([]string(nil), values...)
+	}
+	return headers
+}
+
+func (client *Client) connectAndRejoin(run *clientRun, token string) bool {
+	conn, resp, err := client.dialWebSocket(run, client.config.getWSUrl(token), client.webSocketHeaders())
 	if err != nil {
-		log.Printf("Client - Connection attempt failed: %v\n", err)
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		if conn != nil {
 			_ = conn.Close()
 		}
+		log.Printf("Client - Connection attempt failed: %v\n", err)
 		return false
 	}
 	if resp != nil {
 		log.Printf("Client - Status: %s\n", resp.Status)
+	}
+	if !client.trackConnectingConnection(run, conn) {
+		_ = conn.Close()
+		return false
 	}
 
 	client.subscriptionsMu.Lock()
@@ -383,66 +589,63 @@ func (client *Client) connectAndRejoin(token string, headers http.Header) bool {
 		log.Printf("Client - Rejoining %d subscriptions", len(client.subscriptions))
 	}
 	for symbol := range client.subscriptions {
+		if run != nil && run.ctx.Err() != nil {
+			client.clearConnectingConnection(conn)
+			_ = conn.Close()
+			return false
+		}
 		if err := client.writeMessage(conn, client.composeJoinMsg(symbol)); err != nil {
 			log.Printf("Client - Rejoin failed: %v\n", err)
+			client.clearConnectingConnection(conn)
 			_ = conn.Close()
 			return false
 		}
 	}
-	return client.installConnection(conn)
+	return client.installConnection(run, conn)
 }
 
-func (client *Client) initWebSocket(token string) bool {
+func (client *Client) initWebSocket(run *clientRun, token string) bool {
 	log.Println("Client - Connecting...")
-	headers := http.Header{
-		"UseNewEquitiesFormat": {"v2"},
-		"Client-Information":   {"IntrinioRealtimeOptionsGoSDKv4.0"},
-	}
-	return client.connectAndRejoin(token, headers)
+	return client.connectAndRejoin(run, token)
 }
 
 func (client *Client) tryResetWebSocket() bool {
 	token, _ := client.tokenValue()
-	return client.connectAndRejoin(token, http.Header{"UseNewEquitiesFormat": {"true"}})
+	return client.connectAndRejoin(client.currentRun(), token)
 }
 
-func (client *Client) reconnect() bool {
-	client.closeWebSocket()
-	ctx := client.operationContext()
-	client.stateMu.RLock()
-	delay := client.reconnectDelay
-	backoffs := append([]time.Duration(nil), client.backoffs...)
-	client.stateMu.RUnlock()
-	if !waitFor(ctx, delay) {
+func (client *Client) reconnect(run *clientRun) bool {
+	client.closeWebSocketForRun(run)
+	backoffs, reconnectDelay := client.settings()
+	if !waitFor(run.ctx, reconnectDelay) {
 		return false
 	}
 
-	return doBackoff(ctx, backoffs, func() bool {
+	return doBackoff(run.ctx, backoffs, func() bool {
 		log.Println("Client - Reconnecting...")
-		if _, fresh := client.tokenValue(); !fresh && !client.trySetToken() {
-			return false
+		token, fresh := client.tokenValue()
+		if !fresh {
+			if !client.trySetTokenForRun(run) {
+				return false
+			}
+			token, _ = client.tokenValue()
 		}
-		return client.tryResetWebSocket()
+		return client.connectAndRejoin(run, token)
 	})
 }
 
-func (client *Client) write() {
-	defer client.runWg.Done()
+func (client *Client) write(run *clientRun) {
 	interval := client.heartbeat
 	if interval <= 0 {
 		interval = time.Duration(HEARTBEAT_INTERVAL) * time.Second
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	ctx := client.operationContext()
 
-	for {
-		if ctx.Err() != nil || client.stopped() {
-			return
-		}
-		conn := client.currentConnection()
+	for run.ctx.Err() == nil {
+		conn := client.currentConnectionForRun(run)
 		if conn == nil {
-			if !waitFor(ctx, 10*time.Millisecond) {
+			if !waitFor(run.ctx, 10*time.Millisecond) {
 				return
 			}
 			continue
@@ -450,7 +653,7 @@ func (client *Client) write() {
 
 		var data []byte
 		select {
-		case <-ctx.Done():
+		case <-run.ctx.Done():
 			return
 		case <-ticker.C:
 			data = []byte{}
@@ -464,17 +667,13 @@ func (client *Client) write() {
 	}
 }
 
-func (client *Client) read() {
-	defer client.runWg.Done()
+func (client *Client) read(run *clientRun) {
 	highWatermark := cap(client.readChannel) * 9 / 10
 	queueFull := false
-	for {
-		if client.stopped() {
-			return
-		}
-		conn := client.currentConnection()
+	for run.ctx.Err() == nil {
+		conn := client.currentConnectionForRun(run)
 		if conn == nil {
-			if !client.reconnect() {
+			if !client.reconnect(run) {
 				return
 			}
 			continue
@@ -482,9 +681,12 @@ func (client *Client) read() {
 
 		msgType, data, err := conn.ReadMessage()
 		if err != nil {
+			if !client.isCurrentConnection(run, conn) {
+				continue
+			}
 			client.markConnectionFailed(conn)
 			log.Printf("Client - Received message '%v'\n", err)
-			if client.stopped() || !client.reconnect() {
+			if run.ctx.Err() != nil || !client.reconnect(run) {
 				return
 			}
 			log.Println("Client - Reconnected")
@@ -513,53 +715,114 @@ func (client *Client) read() {
 	}
 }
 
-func (client *Client) Start() {
-	client.stateMu.Lock()
-	if !client.isStopped {
-		client.stateMu.Unlock()
-		return
-	}
-	client.ctx, client.cancel = context.WithCancel(context.Background())
-	client.isStopped = false
-	client.isClosed = true
-	ctx := client.ctx
-	backoffs := append([]time.Duration(nil), client.backoffs...)
-	client.stateMu.Unlock()
-
-	token := client.getToken()
-	if ctx.Err() != nil {
-		return
-	}
-	if !doBackoff(ctx, backoffs, func() bool { return client.initWebSocket(token) }) {
-		return
+func (client *Client) drainSessionBuffers() {
+	for {
+		select {
+		case <-client.readChannel:
+		default:
+			goto readDrained
+		}
 	}
 
-	client.stateMu.Lock()
-	if client.isStopped {
-		client.stateMu.Unlock()
-		client.closeWebSocket()
+readDrained:
+	if client.priorityQueue != nil {
+		client.priorityQueue.reset()
+	}
+	client.dataMsgCount.Store(0)
+	client.txtMsgCount.Store(0)
+}
+
+func (client *Client) startRun(run *clientRun) {
+	backoffs, _ := client.settings()
+	connected := doBackoff(run.ctx, backoffs, func() bool {
+		token, fresh := client.tokenValue()
+		if !fresh {
+			if !client.trySetTokenForRun(run) {
+				return false
+			}
+			token, _ = client.tokenValue()
+		}
+		return client.initWebSocket(run, token)
+	})
+	if !connected {
+		run.signalStartDone()
 		return
 	}
-	client.closeWg.Add(client.workerCount)
-	client.runWg.Add(2)
+
+	client.stateMu.Lock()
+	if client.run != run || client.lifecycle != clientStarting || run.ctx.Err() != nil {
+		client.stateMu.Unlock()
+		client.closeWebSocketForRun(run)
+		run.signalStartDone()
+		return
+	}
+	client.lifecycle = clientStarted
+	run.wg.Add(client.workerCount + 2)
 	client.stateMu.Unlock()
+
 	for worker := 0; worker < client.workerCount; worker++ {
-		go client.work()
+		go func() {
+			defer run.wg.Done()
+			client.work(run.ctx)
+		}()
 	}
-	go client.read()
-	go client.write()
+	go func() {
+		defer run.wg.Done()
+		client.read(run)
+	}()
+	go func() {
+		defer run.wg.Done()
+		client.write(run)
+	}()
+	run.signalStartDone()
+}
+
+func (client *Client) Start() {
+	for {
+		client.stateMu.Lock()
+		switch client.lifecycle {
+		case clientStopped:
+			run := newClientRun()
+			client.run = run
+			client.lifecycle = clientStarting
+			client.stateMu.Unlock()
+			client.drainSessionBuffers()
+			client.startRun(run)
+			return
+		case clientStarting:
+			run := client.run
+			client.stateMu.Unlock()
+			<-run.startDone
+			client.stateMu.RLock()
+			started := client.run == run && client.lifecycle == clientStarted
+			client.stateMu.RUnlock()
+			if started {
+				return
+			}
+		case clientStarted:
+			client.stateMu.Unlock()
+			return
+		case clientStopping:
+			run := client.run
+			client.stateMu.Unlock()
+			<-run.done
+		}
+	}
 }
 
 func (client *Client) enqueueIfConnected(data []byte) {
-	ctx := client.operationContext()
+	run := client.currentRun()
+	if run == nil {
+		return
+	}
 	for {
-		if client.currentConnection() == nil || client.stopped() {
+		if client.currentConnectionForRun(run) == nil {
 			return
 		}
 		select {
 		case client.writeChannel <- data:
 			return
-		case <-ctx.Done():
+		case <-run.ctx.Done():
 			return
 		case <-time.After(10 * time.Millisecond):
 		}
@@ -626,23 +889,49 @@ func (client *Client) LeaveLobby(composeLeave func(string)) {
 func (client *Client) Stop() {
 	log.Println("Client - Stopping...")
 	client.stateMu.Lock()
-	if client.isStopped {
+	switch client.lifecycle {
+	case clientStopped:
 		client.stateMu.Unlock()
 		return
+	case clientStopping:
+		run := client.run
+		client.stateMu.Unlock()
+		<-run.done
+		return
+	case clientStarting, clientStarted:
+		run := client.run
+		client.lifecycle = clientStopping
+		run.cancel()
+		client.stateMu.Unlock()
+
+		client.closeWebSocketForRun(run)
+		<-run.startDone
+		run.wg.Wait()
+		client.drainSessionBuffers()
+		client.drainWriteChannel()
+
+		client.stateMu.Lock()
+		if client.run == run {
+			client.run = nil
+			client.lifecycle = clientStopped
+		}
+		client.stateMu.Unlock()
+		run.signalDone()
+		log.Println("Client - Stopped")
 	}
-	client.isStopped = true
-	cancel := client.cancel
-	client.stateMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	client.closeWebSocket()
-	client.LeaveAll()
-	client.closeWg.Wait()
-	client.runWg.Wait()
-	log.Println("Client - Stopped")
 }
 
 func (client *Client) LogStats() {
-	log.Printf("Client - Data Message Count: %d, Queue Depth: %d", client.dataMsgCount.Load(), len(client.readChannel))
+	priorityDepth := 0
+	priorityDrops := uint64(0)
+	if client.priorityQueue != nil {
+		priorityDepth = client.priorityQueue.depth()
+		priorityDrops = client.priorityQueue.dropCount()
+	}
+	log.Printf(
+		"Client - Data Message Count: %d, Queue Depth: %d, Priority Queue Depth: %d, Priority Queue Drops: %d",
+		client.dataMsgCount.Load(),
+		len(client.readChannel),
+		priorityDepth,
+		priorityDrops)
 }

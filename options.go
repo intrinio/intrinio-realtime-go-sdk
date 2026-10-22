@@ -79,6 +79,13 @@ const (
 	OPTION_UA_MSG_SIZE      int = 74
 )
 
+const (
+	optionTradePriority = iota
+	optionUnusualActivityPriority
+	optionRefreshPriority
+	optionQuotePriority
+)
+
 var priceTypeDivisorTable [16]float64 = [16]float64{1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0, 100000000.0, 1000000000.0, 512.0, 0.0, 0.0, 0.0, 0.0, math.NaN()}
 
 func extractUInt64Price(priceBytes []byte, priceType uint8) float64 {
@@ -383,47 +390,86 @@ func parseOptionUA(bytes []byte) OptionUnusualActivity {
 }
 
 func workOnOptions(
-	readChannel <-chan []byte,
+	queue *priorityQueue,
 	onTrade func(OptionTrade),
 	onQuote func(OptionQuote),
 	onRefresh func(OptionRefresh),
-	onUA func(OptionUnusualActivity)) {
-	select {
-	case data := <-readChannel:
-		count := data[0]
-		startIndex := 1
-		for i := 0; i < int(count); i++ {
-			msgType := data[startIndex+1+MAX_OPTION_SYMBOL_SIZE]
-			if msgType == 1 {
-				quote := parseOptionQuote(data[startIndex:(startIndex + OPTION_QUOTE_MSG_SIZE)])
-				startIndex = startIndex + OPTION_QUOTE_MSG_SIZE
-				if onQuote != nil {
-					onQuote(quote)
-				}
-			} else if msgType == 0 {
-				trade := parseOptionTrade(data[startIndex:(startIndex + OPTION_TRADE_MSG_SIZE)])
-				startIndex = startIndex + OPTION_TRADE_MSG_SIZE
-				if onTrade != nil {
-					onTrade(trade)
-				}
-			} else if msgType > 2 {
-				ua := parseOptionUA(data[startIndex:(startIndex + OPTION_UA_MSG_SIZE)])
-				startIndex = startIndex + OPTION_UA_MSG_SIZE
-				if onUA != nil {
-					onUA(ua)
-				}
-			} else if msgType == 2 {
-				refresh := parseOptionRefresh(data[startIndex:(startIndex + OPTION_REFRESH_MSG_SIZE)])
-				startIndex = startIndex + OPTION_REFRESH_MSG_SIZE
-				if onRefresh != nil {
-					onRefresh(refresh)
-				}
-			} else {
-				log.Printf("Option Client - Invalid message type: %d", msgType)
-			}
-		}
-	default:
+	onUA func(OptionUnusualActivity)) bool {
+	data, ok := queue.dequeue()
+	if !ok {
+		return false
 	}
+
+	msgType := data[1+MAX_OPTION_SYMBOL_SIZE]
+	if msgType == 1 {
+		quote := parseOptionQuote(data)
+		if onQuote != nil {
+			onQuote(quote)
+		}
+	} else if msgType == 0 {
+		trade := parseOptionTrade(data)
+		if onTrade != nil {
+			onTrade(trade)
+		}
+	} else if msgType > 2 {
+		ua := parseOptionUA(data)
+		if onUA != nil {
+			onUA(ua)
+		}
+	} else if msgType == 2 {
+		refresh := parseOptionRefresh(data)
+		if onRefresh != nil {
+			onRefresh(refresh)
+		}
+	} else {
+		log.Printf("Option Client - Invalid message type: %d", msgType)
+	}
+	return true
+}
+
+func queueOptionMessages(
+	data []byte,
+	queue *priorityQueue,
+	processNext func() bool) error {
+	if len(data) == 0 {
+		return fmt.Errorf("message is empty")
+	}
+
+	count := int(data[0])
+	startIndex := 1
+	for i := 0; i < count; i++ {
+		if startIndex+1+MAX_OPTION_SYMBOL_SIZE >= len(data) {
+			return fmt.Errorf("event %d is missing its message type", i)
+		}
+
+		messageType := data[startIndex+1+MAX_OPTION_SYMBOL_SIZE]
+		var messageLength int
+		var priority int
+		switch {
+		case messageType == 0:
+			messageLength = OPTION_TRADE_MSG_SIZE
+			priority = optionTradePriority
+		case messageType > 2:
+			messageLength = OPTION_UA_MSG_SIZE
+			priority = optionUnusualActivityPriority
+		case messageType == 2:
+			messageLength = OPTION_REFRESH_MSG_SIZE
+			priority = optionRefreshPriority
+		case messageType == 1:
+			messageLength = OPTION_QUOTE_MSG_SIZE
+			priority = optionQuotePriority
+		default:
+			return fmt.Errorf("event %d has invalid message type %d", i, messageType)
+		}
+
+		if startIndex+messageLength > len(data) {
+			return fmt.Errorf("event %d is truncated", i)
+		}
+		message := data[startIndex : startIndex+messageLength]
+		enqueuePriorityMessage(queue, priority, message, processNext)
+		startIndex += messageLength
+	}
+	return nil
 }
 
 func composeOptionJoinMsg(
