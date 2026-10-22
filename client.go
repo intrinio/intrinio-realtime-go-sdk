@@ -331,7 +331,7 @@ func (client *Client) trySetTokenForRun(run *clientRun) bool {
 		log.Printf("Client - Authorization Failure: %v\n", err)
 		return false
 	}
-	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv4.0")
+	req.Header.Add("Client-Information", "IntrinioRealtimeOptionsGoSDKv4.1")
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		log.Printf("Client - Authorization Failure: %v\n", err)
