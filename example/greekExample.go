@@ -15,9 +15,12 @@ type GreekSampleApp struct {
 	timer                 *time.Ticker
 	dataTimer             *time.Ticker
 	greekClient           *composite.GreekClient
+	equitiesClient        *intrinio.Client
+	optionsClient         *intrinio.Client
 	dataCache             composite.DataCache
 	seenGreekTickers      map[string]string
 	seenGreekTickersMutex sync.RWMutex
+	stopOnce              sync.Once
 
 	// Event counters
 	optionsTradeEventCount  uint64
@@ -27,7 +30,7 @@ type GreekSampleApp struct {
 	greekUpdatedEventCount  uint64
 
 	// Mock data generation
-	stopChan chan bool
+	stopChan chan struct{}
 	wg       sync.WaitGroup
 }
 
@@ -35,7 +38,7 @@ type GreekSampleApp struct {
 func NewGreekSampleApp() *GreekSampleApp {
 	return &GreekSampleApp{
 		seenGreekTickers: make(map[string]string),
-		stopChan:         make(chan bool),
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -172,47 +175,44 @@ func (g *GreekSampleApp) runGreekExample() error {
 		}
 	}()
 
-	var equitiesClient *intrinio.Client = intrinio.NewEquitiesClient(equitiesConfig, g.OnEquitiesTrade, g.OnEquitiesQuote)
-	equitiesClient.Start()
-	equitiesClient.JoinMany(symbols)
+	g.equitiesClient = intrinio.NewEquitiesClient(equitiesConfig, g.OnEquitiesTrade, g.OnEquitiesQuote)
+	g.equitiesClient.Start()
+	g.equitiesClient.JoinMany(symbols)
 
-	var optionsClient *intrinio.Client = intrinio.NewOptionsClient(optionsConfig, g.OnOptionsTrade, g.OnOptionsQuote, nil, nil)
-	optionsClient.Start()
-	optionsClient.JoinMany(symbols)
+	g.optionsClient = intrinio.NewOptionsClient(optionsConfig, g.OnOptionsTrade, g.OnOptionsQuote, nil, nil)
+	g.optionsClient.Start()
+	g.optionsClient.JoinMany(symbols)
 
-	// Wait for interrupt signal
 	log.Println("Greek sample app running. Press Ctrl+C to stop.")
-
-	// Keep the app running
-	select {
-	case <-g.stopChan:
-		break
-	}
-
 	return nil
 }
 
 // Stop stops the Greek sample app
 func (g *GreekSampleApp) Stop() {
-	log.Println("Stopping Greek sample app")
+	g.stopOnce.Do(func() {
+		log.Println("Stopping Greek sample app")
 
-	// Stop the timer
-	if g.timer != nil {
-		g.timer.Stop()
-	}
+		if g.timer != nil {
+			g.timer.Stop()
+		}
+		if g.dataTimer != nil {
+			g.dataTimer.Stop()
+		}
+		close(g.stopChan)
 
-	// Stop mock data generation
-	close(g.stopChan)
+		if g.optionsClient != nil {
+			g.optionsClient.Stop()
+		}
+		if g.equitiesClient != nil {
+			g.equitiesClient.Stop()
+		}
+		if g.greekClient != nil {
+			g.greekClient.Stop()
+		}
 
-	// Stop Greek client
-	if g.greekClient != nil {
-		g.greekClient.Stop()
-	}
-
-	// Wait for all goroutines to finish
-	g.wg.Wait()
-
-	log.Println("Greek sample app stopped")
+		g.wg.Wait()
+		log.Println("Greek sample app stopped")
+	})
 }
 
 // Helper function to extract ticker symbol from contract
