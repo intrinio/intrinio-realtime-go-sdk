@@ -161,7 +161,7 @@ func newClient(c Config, workerCount, readQueueDepth int) *Client {
 		backoffs:       append([]time.Duration(nil), selfHealBackoffs...),
 		heartbeat:      time.Duration(HEARTBEAT_INTERVAL) * time.Second,
 		socketHeaders: http.Header{
-			"Client-Information": {"IntrinioRealtimeOptionsGoSDKv4.0"},
+			"Client-Information": {"IntrinioRealtimeOptionsGoSDKv4.1"},
 		},
 	}
 }
