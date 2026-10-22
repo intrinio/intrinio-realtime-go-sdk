@@ -2,8 +2,14 @@ package intrinio
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 	"math"
+)
+
+const (
+	equityTradePriority = iota
+	equityQuotePriority
 )
 
 type EquityTrade struct {
@@ -87,36 +93,66 @@ func parseEquityQuote(bytes []byte) EquityQuote {
 }
 
 func workOnEquities(
-	readChannel <-chan []byte,
+	queue *priorityQueue,
 	onTrade func(EquityTrade),
-	onQuote func(EquityQuote)) {
-	select {
-	case data := <-readChannel:
-		count := data[0]
-		startIndex := 1
-		for i := 0; i < int(count); i++ {
-			msgType := data[startIndex]
-			if (msgType == 1) || (msgType == 2) {
-				//endIndex := int(data[startIndex+1])
-				endIndex := startIndex + int(data[startIndex+1])
-				quote := parseEquityQuote(data[startIndex:endIndex])
-				startIndex = endIndex
-				if onQuote != nil {
-					onQuote(quote)
-				}
-			} else if msgType == 0 {
-				endIndex := startIndex + int(data[startIndex+1])
-				trade := parseEquityTrade(data[startIndex:endIndex])
-				startIndex = endIndex
-				if onTrade != nil {
-					onTrade(trade)
-				}
-			} else {
-				log.Printf("Equity Client - Invalid message type: %d", msgType)
-			}
-		}
-	default:
+	onQuote func(EquityQuote)) bool {
+	data, ok := queue.dequeue()
+	if !ok {
+		return false
 	}
+
+	msgType := data[0]
+	if (msgType == 1) || (msgType == 2) {
+		quote := parseEquityQuote(data)
+		if onQuote != nil {
+			onQuote(quote)
+		}
+	} else if msgType == 0 {
+		trade := parseEquityTrade(data)
+		if onTrade != nil {
+			onTrade(trade)
+		}
+	} else {
+		log.Printf("Equity Client - Invalid message type: %d", msgType)
+	}
+	return true
+}
+
+func queueEquityMessages(
+	data []byte,
+	queue *priorityQueue,
+	processNext func() bool) error {
+	if len(data) == 0 {
+		return fmt.Errorf("message is empty")
+	}
+
+	count := int(data[0])
+	startIndex := 1
+	for i := 0; i < count; i++ {
+		if startIndex+2 > len(data) {
+			return fmt.Errorf("event %d is missing its type or length", i)
+		}
+
+		messageLength := int(data[startIndex+1])
+		if messageLength < 2 || startIndex+messageLength > len(data) {
+			return fmt.Errorf("event %d has invalid length %d", i, messageLength)
+		}
+
+		message := data[startIndex : startIndex+messageLength]
+		var priority int
+		switch message[0] {
+		case 0:
+			priority = equityTradePriority
+		case 1, 2:
+			priority = equityQuotePriority
+		default:
+			return fmt.Errorf("event %d has invalid message type %d", i, message[0])
+		}
+
+		enqueuePriorityMessage(queue, priority, message, processNext)
+		startIndex += messageLength
+	}
+	return nil
 }
 
 func composeEquityJoinMsg(

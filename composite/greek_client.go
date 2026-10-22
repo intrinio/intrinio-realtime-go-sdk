@@ -199,7 +199,7 @@ func (g *GreekClient) SetIndexPrice(symbol string, variants []string) {
 		resp, err := http.Get(fmt.Sprintf("https://api-v2.intrinio.com/indices/%s/realtime?&api_key=%s", symbol, g.apiKey))
 
 		if err != nil {
-			fmt.Printf("Unable to retrieve Index price. Attempt %i", tryCount)
+			fmt.Printf("Unable to retrieve Index price. Attempt %d", tryCount)
 		} else {
 			defer resp.Body.Close()
 
